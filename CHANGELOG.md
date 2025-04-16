@@ -11,6 +11,9 @@
 ## Improvements
 - Submit trials to runners in SMBO instead of running configs directly (#937)
 
+## Improvements
+- `target_function` becomes optional in Facade when using ask and tell exclusively (#946)
+
 # 2.3.0
 
 ## Documentation
