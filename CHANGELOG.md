@@ -8,7 +8,7 @@
 - Ask and tell without initial design and warmstarting
 
 ## Bugfixes 
-- Ask and tell without initial design may still return a config from the initial design.  
+- Ask and tell without initial design may no longer return a config from the initial design - if it is not "removed".  
 
 # 2.3.0
 
