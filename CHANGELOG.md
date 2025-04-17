@@ -14,6 +14,12 @@
 ## Improvements
 - `target_function` becomes optional in Facade when using ask and tell exclusively (#946)
 
+## Documentation
+- Ask and tell without initial design and warmstarting
+
+## Bugfixes 
+- Ask and tell without initial design may no longer return a config from the initial design - if it is not "removed".  
+
 # 2.3.0
 
 ## Documentation
