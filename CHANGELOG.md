@@ -1,5 +1,8 @@
 # 2.3.1
 
+## Bugfixes
+- Addressing situations where the acquisition function suggests configurations that have already been sampled in prior iterations (#1216)
+
 ## Misc
 - New SMAC logo
 - Fix doc link in README
