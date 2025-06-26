@@ -8,7 +8,10 @@ from scipy.stats import norm
 from smac.acquisition.function.abstract_acquisition_function import (
     AbstractAcquisitionFunction,
 )
+from smac.model.cost_aware_model import CostAwareModel
+from smac.runhistory.runhistory import RunHistory
 from smac.utils.logging import get_logger
+from smac.scenario import Scenario
 
 __copyright__ = "Copyright 2025, Leibniz University Hanover, Institute of AI"
 __license__ = "3-clause BSD"
@@ -286,3 +289,75 @@ class EIPS(EI):
             raise ValueError("Expected Improvement per Second is smaller than 0 " "for at least one sample.")
 
         return f.reshape((-1, 1))
+    
+
+class EICool(EI):
+    """EI-cool acquisition function.
+
+    Parameters
+    ----------
+    scenario: Scenario
+        The scenario object, which contains the budget information.
+    xi : float, defaults to 0.0
+        Controls the balance between exploration and exploitation.
+    log : bool, defaults to False
+        Whether the function values are in log-space.
+    """
+
+    def __init__(
+        self,
+        scenario: Scenario,
+        xi: float = 0.0,
+        log: bool = False,
+    ):
+        super().__init__(xi=xi, log=log)
+        self._scenario = scenario
+        self._runhistory: RunHistory | None = None
+
+        if self._scenario.walltime_limit is None:
+            raise ValueError("EICool requires a walltime_limit to be set in the Scenario.")
+
+        # We get the initial budget from the switching acquisition function's default
+        self._tau = self._scenario.walltime_limit
+        self._tau_init = self._scenario.walltime_limit * (1 / 8)
+
+    @property
+    def name(self) -> str:
+        return "Expected Improvement Cost Cooling"
+
+    def set_runhistory(self, runhistory: RunHistory) -> None:
+        """Sets the runhistory, which is required to get the current consumed budget."""
+        self._runhistory = runhistory
+
+    def _update(self, **kwargs: Any) -> None:
+        super()._update(**kwargs)
+        if not isinstance(self._model, CostAwareModel):
+            raise TypeError("EICool requires a CostAwareModel.")
+
+    def _compute(self, X: np.ndarray) -> np.ndarray:
+        """Compute the EI-cool value."""
+        if not isinstance(self._model, CostAwareModel):
+            raise TypeError("EICool requires a CostAwareModel.")
+
+        if self._runhistory is None:
+            raise RuntimeError("Runhistory must be set before computing EICool.")
+
+        ei_values = super()._compute(X)
+
+        cost_values, _ = self._model.predict_cost(X)
+        cost_values = np.maximum(cost_values, 1e-9)  # Avoid division by zero
+
+        tau_k = self._runhistory.get_total_cost()
+
+        if self._tau <= self._tau_init:
+            alpha = 1.0
+        else:
+            alpha = (self._tau - tau_k) / (self._tau - self._tau_init)
+
+        # Alpha should be between 0 and 1
+        alpha = np.clip(alpha, 0, 1)
+
+        ei_cool_values = ei_values / (cost_values**alpha)
+
+        return ei_cool_values
+

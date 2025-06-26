@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+from typing import Optional
+
+import numpy as np
+from ConfigSpace import Configuration
+from scipy.spatial.distance import cdist
+
+from smac.acquisition.function.abstract_acquisition_function import AbstractAcquisitionFunction
+from smac.model.abstract_model import AbstractModel
+from smac.model.hand_crafted_cost_model import HandCraftedCostModel
+from smac.runhistory import RunHistory
+from smac.scenario import Scenario
+
+
+class CostEffectiveAcquisition(AbstractAcquisitionFunction):
+    """
+    This acquisition function implements the 'Algorithm 1 Cost-effective initial design'
+    as a procedural acquisition function. It guides the acquisition maximizer to select
+    the single most cost-effective configuration from a set of candidates.
+    """
+
+    def __init__(self, scenario: Scenario):
+        super().__init__()
+        self._scenario = scenario
+        self._runhistory: Optional[RunHistory] = None
+        self._cost_model = HandCraftedCostModel(self._scenario.configspace, seed=self._scenario.seed)
+
+    def set_runhistory(self, runhistory: RunHistory) -> None:
+        """Sets the runhistory, which is required to get cost data."""
+        self._runhistory = runhistory
+
+    def _update(self, model: AbstractModel, **kwargs: object) -> None:
+        """
+        Updates the cost model with the latest data from the runhistory.
+        The main performance model is ignored here, but we call super() to keep the interface.
+        """
+        super()._update(model=model, **kwargs)
+        if self._runhistory is None:
+            return
+
+        X_data, Y_costs = self._runhistory.get_cost_data()
+        if len(X_data) > 0:
+            self._cost_model.train(X_data, Y_costs.reshape(-1, 1))
+
+    def _compute(self, X: np.ndarray) -> np.ndarray:
+        """
+        Takes a set of candidate configurations and returns acquisition values
+        that lead to the selection of the single most cost-effective point.
+        """
+        if self._runhistory is None:
+            raise RuntimeError("Runhistory must be set before computing the acquisition value.")
+
+        if X.shape[0] <= 1:
+            return np.ones((X.shape[0], 1))
+
+        candidate_configs = [Configuration(self._scenario.configspace, vector=x) for x in X]
+        candidate_arrays = np.copy(X)
+
+        X_init_configs = self._runhistory.get_configs()
+        X_init_arrays = np.array([c.get_array() for c in X_init_configs]) if X_init_configs else None
+
+        while len(candidate_configs) > 1:
+            # 1. Exclude most expensive point
+            costs, _ = self._cost_model.predict(candidate_arrays)
+            max_cost_idx = np.argmax(costs)
+            
+            candidate_configs.pop(max_cost_idx)
+            candidate_arrays = np.delete(candidate_arrays, max_cost_idx, axis=0)
+
+            if len(candidate_configs) == 1:
+                break
+
+            # 2. Exclude point closest to X_init
+            if X_init_arrays is not None and X_init_arrays.shape[0] > 0:
+                distances = cdist(candidate_arrays, X_init_arrays)
+                min_dist_to_init = np.min(distances, axis=1)
+                closest_idx = np.argmin(min_dist_to_init)
+
+                candidate_configs.pop(closest_idx)
+                candidate_arrays = np.delete(candidate_arrays, closest_idx, axis=0)
+
+        winner_config = candidate_configs[0]
+        winner_vector = winner_config.get_array()
+
+        acq_values = np.zeros(X.shape[0])
+        for i, x_vec in enumerate(X):
+            if np.allclose(x_vec, winner_vector):
+                acq_values[i] = 1.0
+                break
+        
+        return acq_values.reshape(-1, 1)

@@ -111,6 +111,7 @@ class Scenario:
     # Others
     seed: int = 0
     n_workers: int = 1
+    cost_aware: bool = False
 
     def __post_init__(self) -> None:
         """Checks whether the config is valid."""
