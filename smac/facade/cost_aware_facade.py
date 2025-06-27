@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from smac.acquisition.function.ei_cool import EICool
+from typing import Any
+
+from smac.acquisition.function.cost_effective_acquisition_function import (
+    CostEffectiveAcquisition,
+)
+from smac.acquisition.function.expected_improvement import EICool
 from smac.acquisition.function.switching_acquistion_function import SwitchingAcquisition
-from smac.acquisition.cost_effective_acquisition import CostEffectiveAcquisition
-from smac.facade.hyperparameter_optimization_facade import HyperparameterOptimizationFacade
+from smac.facade.hyperparameter_optimization_facade import (
+    HyperparameterOptimizationFacade,
+)
 from smac.initial_design.sobol_design import SobolInitialDesign
 from smac.model.cost_aware_model import CostAwareModel
 from smac.scenario import Scenario
@@ -25,7 +31,7 @@ class CostAwareHyperparameterOptimizationFacade(HyperparameterOptimizationFacade
     """
 
     @staticmethod
-    def get_model(
+    def get_model(  # type: ignore[override]
         scenario: Scenario,
         *,
         n_trees: int = 10,
@@ -47,7 +53,7 @@ class CostAwareHyperparameterOptimizationFacade(HyperparameterOptimizationFacade
         )
 
     @staticmethod
-    def get_acquisition_function(
+    def get_acquisition_function(  # type: ignore[override]
         scenario: Scenario,
         *,
         xi: float = 0.0,
@@ -67,8 +73,9 @@ class CostAwareHyperparameterOptimizationFacade(HyperparameterOptimizationFacade
         scenario: Scenario,
         *,
         n_configs: int | None = None,
+        n_configs_per_hyperparamter: int = 10,
         max_ratio: float = 0.25,
-        n_configs_per_hyperparameter: int = 10,
+        additional_configs: list[Any] | None = None,
     ) -> SobolInitialDesign:
         """
         The main "initial design" is now handled by the SwitchingAcquisition.

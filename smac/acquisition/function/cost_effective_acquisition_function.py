@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from ConfigSpace import Configuration
 from scipy.spatial.distance import cdist
 
-from smac.acquisition.function.abstract_acquisition_function import AbstractAcquisitionFunction
-from smac.model.abstract_model import AbstractModel
+from smac.acquisition.function.abstract_acquisition_function import (
+    AbstractAcquisitionFunction,
+)
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 from smac.runhistory import RunHistory
 from smac.scenario import Scenario
@@ -30,18 +31,21 @@ class CostEffectiveAcquisition(AbstractAcquisitionFunction):
         """Sets the runhistory, which is required to get cost data."""
         self._runhistory = runhistory
 
-    def _update(self, model: AbstractModel, **kwargs: object) -> None:
+    def _update(self, **kwargs: Any) -> None:
         """
         Updates the cost model with the latest data from the runhistory.
         The main performance model is ignored here, but we call super() to keep the interface.
         """
-        super()._update(model=model, **kwargs)
+        super()._update(**kwargs)
         if self._runhistory is None:
             return
 
-        X_data, Y_costs = self._runhistory.get_cost_data()
-        if len(X_data) > 0:
-            self._cost_model.train(X_data, Y_costs.reshape(-1, 1))
+        # Use the new method to get runtime data
+        runtime_data, Y_runtimes = self._runhistory.get_runtime_data()
+        if len(runtime_data) > 0:
+            # Convert list of configs to numpy array before training
+            X_array = np.array([c.get_array() for c in runtime_data])
+            self._cost_model.train(X_array, Y_runtimes.reshape(-1, 1))
 
     def _compute(self, X: np.ndarray) -> np.ndarray:
         """
@@ -64,7 +68,7 @@ class CostEffectiveAcquisition(AbstractAcquisitionFunction):
             # 1. Exclude most expensive point
             costs, _ = self._cost_model.predict(candidate_arrays)
             max_cost_idx = np.argmax(costs)
-            
+
             candidate_configs.pop(max_cost_idx)
             candidate_arrays = np.delete(candidate_arrays, max_cost_idx, axis=0)
 
@@ -88,5 +92,5 @@ class CostEffectiveAcquisition(AbstractAcquisitionFunction):
             if np.allclose(x_vec, winner_vector):
                 acq_values[i] = 1.0
                 break
-        
+
         return acq_values.reshape(-1, 1)

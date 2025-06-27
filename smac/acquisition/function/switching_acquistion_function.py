@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
-from smac.acquisition.function.abstract_acquisition_function import AbstractAcquisitionFunction
-from smac.acquisition.function.cost_effective_acquisition_function import CostEffectiveAcquisition
-from smac.acquisition.function.expected_improvement import EICool
-from smac.model.abstract_model import AbstractModel
+from smac.acquisition.function.abstract_acquisition_function import (
+    AbstractAcquisitionFunction,
+)
 from smac.runhistory import RunHistory
 from smac.scenario import Scenario
 from smac.utils.logging import get_logger
@@ -44,18 +43,22 @@ class SwitchingAcquisition(AbstractAcquisitionFunction):
         """Sets the runhistory for this and the wrapped acquisition functions."""
         self._runhistory = runhistory
 
-        # Use isinstance for type-safe check
-        if isinstance(self._initial_acquisition, CostEffectiveAcquisition):
-            self._initial_acquisition.set_runhistory(runhistory)
+        # Pass the runhistory to the wrapped acquisition functions if they need it
+        if hasattr(self._initial_acquisition, "set_runhistory"):
+            self._initial_acquisition.set_runhistory(runhistory)  # type: ignore[attr-defined]
 
-        if isinstance(self._main_acquisition, EICool):
-            self._main_acquisition.set_runhistory(runhistory)
+        if hasattr(self._main_acquisition, "set_runhistory"):
+            self._main_acquisition.set_runhistory(runhistory)  # type: ignore[attr-defined]
 
-    def _update(self, model: AbstractModel, **kwargs: object) -> None:
+    def _update(self, **kwargs: Any) -> None:
         """Updates both the initial and main acquisition functions."""
-        super()._update(model=model, **kwargs)
-        self._initial_acquisition.update(model=model, **kwargs)
-        self._main_acquisition.update(model=model, **kwargs)
+        # The model is set by the public `update` method before this is called.
+        if self._model is None:
+            raise RuntimeError("Model has not been set. Call `update` with a model first.")
+
+        # Now, update the wrapped acquisition functions
+        self._initial_acquisition.update(model=self._model, **kwargs)
+        self._main_acquisition.update(model=self._model, **kwargs)
 
     def _compute(self, X: np.ndarray) -> np.ndarray:
         """

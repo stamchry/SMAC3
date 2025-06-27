@@ -3,11 +3,10 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import numpy as np
-from ConfigSpace import ConfigurationSpace
 
 from smac.model.abstract_model import AbstractModel
-from smac.model.random_forest.random_forest import RandomForest
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
+from smac.model.random_forest.random_forest import RandomForest
 from smac.runhistory import RunHistory
 from smac.scenario import Scenario
 
@@ -40,10 +39,11 @@ class CostAwareModel(AbstractModel):
         # Train performance model
         self.performance_model.train(X, Y)
 
-        # Train cost model
-        cost_X, cost_Y = self._runhistory.get_cost_data()
-        if len(cost_X) > 0:
-            self.cost_model.train(cost_X, cost_Y.reshape(-1, 1))
+        # Train cost model on runtime data
+        runtime_configs, runtime_Y = self._runhistory.get_runtime_data()
+        if len(runtime_configs) > 0:
+            runtime_X_array = np.array([c.get_array() for c in runtime_configs])
+            self.cost_model.train(runtime_X_array, runtime_Y.reshape(-1, 1))
 
         return self
 
@@ -64,6 +64,7 @@ class CostAwareModel(AbstractModel):
 
     @property
     def meta(self) -> dict[str, Any]:
+        """Returns the meta data of the created object."""
         meta = super().meta
         meta.update(
             {
