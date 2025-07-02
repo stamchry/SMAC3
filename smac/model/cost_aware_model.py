@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
 from smac.model.abstract_model import AbstractModel
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 from smac.model.random_forest.random_forest import RandomForest
-from smac.runhistory import RunHistory
 from smac.scenario import Scenario
 
 
@@ -19,47 +18,61 @@ class CostAwareModel(AbstractModel):
         scenario: Scenario,
         **kwargs: Any,
     ):
-        super().__init__(
-            configspace=scenario.configspace,
-            seed=scenario.seed,
-        )
-        self.performance_model = RandomForest(scenario.configspace, seed=scenario.seed, **kwargs)
-        self.cost_model = HandCraftedCostModel(scenario.configspace, seed=scenario.seed)
-        self._runhistory: Optional[RunHistory] = None
-
-    def set_runhistory(self, runhistory: RunHistory) -> None:
-        """Sets the runhistory, which is required to get cost data for training."""
-        self._runhistory = runhistory
+        super().__init__(configspace=scenario.configspace)
+        self.performance_model = RandomForest(scenario.configspace, **kwargs)
+        self.cost_model = HandCraftedCostModel(scenario.configspace)
 
     def _train(self, X: np.ndarray, Y: np.ndarray) -> CostAwareModel:
-        """Trains the performance model with Y and the cost model with data from runhistory."""
-        if self._runhistory is None:
-            raise RuntimeError("Runhistory must be set before training the CostAwareModel.")
+        """
+        Trains the performance model with the first column of Y and the cost model
+        with the second column of Y.
+        """
+        if Y.ndim != 2 or Y.shape[1] != 2:
+            raise ValueError(
+                "CostAwareModel expects a Y matrix with 2 columns (performance and cost), "
+                f"but got a matrix with shape {Y.shape}."
+            )
+
+        # The first column is performance, the second is cost.
+        # This data is prepared by the RunHistoryCostAwareEncoder.
+        y_perf = Y[:, 0]
+        y_cost = Y[:, 1]
 
         # Train performance model
-        self.performance_model.train(X, Y)
+        self.performance_model.train(X, y_perf)
 
-        # Train cost model on runtime data
-        runtime_configs, runtime_Y = self._runhistory.get_runtime_data()
-        if len(runtime_configs) > 0:
-            runtime_X_array = np.array([c.get_array() for c in runtime_configs])
-            self.cost_model.train(runtime_X_array, runtime_Y.reshape(-1, 1))
+        # Train cost model
+        self.cost_model.train(X, y_cost)
 
         return self
 
-    def _predict(
-        self,
-        X: np.ndarray,
-        covariance_type: str | None = "diagonal",
-    ) -> tuple[np.ndarray, np.ndarray | None]:
-        """Predict performance."""
-        return self.performance_model.predict(X, covariance_type=covariance_type)
+    def predict_marginalized(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Predicts mean and variance marginalized over all instances.
 
-    def predict_cost(
-        self,
-        X: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray | None]:
-        """Predict cost."""
+        This method is intended to be used by acquisition functions like EI, which
+        only care about the performance, not the cost. Therefore, this method
+        delegates the prediction to the internal performance model.
+
+        Warning
+        -------
+        The input data must not include any features.
+
+        Parameters
+        ----------
+        X : np.ndarray [#samples, #hyperparameters]
+            Input data points.
+
+        Returns
+        -------
+        means : np.ndarray [#samples, 1]
+            The predictive mean of the performance.
+        vars : np.ndarray [#samples, 1]
+            The predictive variance of the performance.
+        """
+        return self.performance_model.predict_marginalized(X)
+
+    def predict_cost(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+        """Predicts the mean and variance of the cost."""
         return self.cost_model.predict(X)
 
     @property

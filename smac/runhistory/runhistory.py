@@ -1006,11 +1006,6 @@ class RunHistory(Mapping[TrialKey, TrialValue]):
         ----
         This method always calls `update_cost` in the multi-objective setting.
         """
-        # --- DEBUGGING ---
-        print(
-            f"DEBUG[RunHistory._add]: Adding key {k} with time {v.time:.4f}s. " f"Current data size: {len(self._data)}"
-        )
-        # --- END DEBUGGING ---
         self._data[k] = v
 
         # Update objective bounds based on raw data
@@ -1048,19 +1043,20 @@ class RunHistory(Mapping[TrialKey, TrialValue]):
                 # Append new budget to existing inst-seed-key dict
                 self._config_id_to_isk_to_budget[k.config_id][isk].append(k.budget)
 
-            # For our cost-aware optimization, we do not need the cached costs,
-            # as our models read directly from the raw data. We can skip these
-            # expensive updates.
-            if not self._overwrite_existing_trials:
-                config = self._ids_config[k.config_id]
-                config_hash = get_config_hash(config)
+            config = self._ids_config[k.config_id]
+            config_hash = get_config_hash(config)
 
-                if k.budget == 0:
-                    logger.debug(f"Incremental update cost for config {config_hash}")
-                    self.incremental_update_cost(config, v.cost)
-                else:
-                    logger.debug(f"Update cost for config {config_hash}.")
-                    self.update_cost(config)
+            # If budget is used, then update cost instead of incremental updates
+            if not self._overwrite_existing_trials and k.budget == 0:
+                logger.debug(f"Incremental update cost for config {config_hash}")
+                # Assumes an average across trials as cost function aggregation, this is used for
+                # algorithm configuration (incremental updates are used to save time as getting the
+                # cost for > 100 instances is high)
+                self.incremental_update_cost(config, v.cost)
+            else:
+                # This happens when budget > 0 (only successive halving and hyperband so far)
+                logger.debug(f"Update cost for config {config_hash}.")
+                self.update_cost(config)
 
         # Make TrialInfo object
         trial_info = TrialInfo(self.get_config(k.config_id), instance=k.instance, seed=k.seed, budget=k.budget)
@@ -1107,106 +1103,6 @@ class RunHistory(Mapping[TrialKey, TrialValue]):
         for key in instance_seed_budget_keys:
             k = TrialKey(
                 config_id=id_,
-                instance=key.instance,
-                seed=key.seed,
-                budget=key.budget,
-            )
-
-            costs.append(self._data[k].cost)
-
-        return costs
-
-    def get_cost_data(self) -> tuple[list[Configuration], np.ndarray]:
-        """
-        Returns all configurations and their corresponding costs from the runhistory.
-
-        Returns
-        -------
-        configs : list[Configuration]
-            A list of all configurations that have been run.
-        costs : np.ndarray
-            A numpy array of the corresponding costs.
-        """
-        configs: list[Configuration] = []
-        costs: list[float] = []
-        for run_key, run_value in self._data.items():
-            # The key is a TrialKey (or RunKey), which has a config_id.
-            # We use the config_id to get the full Configuration object.
-            config = self._ids_config[run_key.config_id]
-            configs.append(config)
-
-            cost = run_value.cost
-            if isinstance(cost, list):
-                if self._multi_objective_algorithm is None:
-                    raise ValueError(
-                        "Runhistory contains multi-objective data but no multi-objective algorithm is specified."
-                    )
-
-                # In case of multi-objective, we need to scalarize the cost
-                normalized_cost = normalize_costs(cost, self._objective_bounds)
-                scalar_cost = self._multi_objective_algorithm(normalized_cost)
-                costs.append(scalar_cost)
-            else:
-                costs.append(cost)
-
-        return configs, np.array(costs)
-
-    def get_runtime_data(self) -> tuple[list[Configuration], np.ndarray]:
-        """
-        Returns all configurations and their corresponding runtimes from the runhistory.
-
-        Returns
-        -------
-        configs : list[Configuration]
-            A list of all configurations that have been run.
-        runtimes : np.ndarray
-            A numpy array of the corresponding runtimes.
-        """
-        configs: list[Configuration] = []
-        runtimes: list[float] = []
-        for run_key, run_value in self._data.items():
-            config = self._ids_config[run_key.config_id]
-            configs.append(config)
-            runtimes.append(run_value.time)
-
-        return configs, np.array(runtimes)
-
-    def get_total_cost(self) -> float:
-        """Returns the total cost (runtime) of all runs in the runhistory."""
-        if not self._data:
-            return 0.0
-
-        # The budget is consumed by runtime, so we must sum the `time` attribute.
-        total_time = sum(run_value.time for run_value in self._data.values())
-        return total_time
-
-    def get_instance_costs_for_config(
-        self,
-        config: Configuration,
-        instance_seed_budget_keys: list[InstanceSeedBudgetKey] | None = None,
-    ) -> list[float | list[float]]:
-        """Returns the costs for all instances for a given configuration.
-
-        Parameters
-        ----------
-        config : Configuration
-            Configuration to calculate objective for.
-        instance_seed_budget_keys : list, optional (default=None)
-            List of tuples of instance-seeds-budget keys. If None, the runhistory is
-            queried for all trials of the given configuration.
-
-        Returns
-        -------
-        costs: list[float | list[float]]
-            List of costs for the given configuration and instance-seed pairs.
-        """
-        if instance_seed_budget_keys is None:
-            instance_seed_budget_keys = self.get_instance_seed_budget_keys(config)
-
-        costs = []
-        for key in instance_seed_budget_keys:
-            k = TrialKey(
-                config_id=self._config_ids[config],
                 instance=key.instance,
                 seed=key.seed,
                 budget=key.budget,

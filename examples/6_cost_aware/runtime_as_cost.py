@@ -10,9 +10,6 @@ from ConfigSpace import Configuration, ConfigurationSpace, UniformFloatHyperpara
 from smac.facade.cost_aware_facade import (
     CostAwareHyperparameterOptimizationFacade,
 )
-from smac.facade.hyperparameter_optimization_facade import (
-    HyperparameterOptimizationFacade,
-)
 from smac.scenario import Scenario
 
 # Configure logging to see SMAC's output, including the acquisition function switch
@@ -44,33 +41,26 @@ def my_target_function(config: Configuration, seed: int | None = None) -> float:
 if __name__ == "__main__":
     # 1. Define the hyperparameter space
     configspace = ConfigurationSpace()
-    configspace.add(UniformFloatHyperparameter("x", 0, 10, default_value=5))
+    configspace.add(UniformFloatHyperparameter("x", 0, 6, default_value=5))
 
     # 2. Define the scenario
     scenario = Scenario(
         configspace,
+        name="new_code3",
         objectives="loss",  # Name of the objective
         # --- Key parameters for cost-aware optimization ---
         cost_aware=True,
-        walltime_limit=15,  # Total budget in seconds
+        walltime_limit=90,  # Total budget in seconds
         # ---
         seed=1,
     )
 
     # 3. Select the appropriate facade
-    if scenario.cost_aware:
-        print("Using Cost-Aware Hyperparameter Optimization Facade.")
-        smac = CostAwareHyperparameterOptimizationFacade(
-            scenario=scenario,
-            target_function=my_target_function,
-            overwrite=True
-        )
-    else:
-        print("Using Standard Hyperparameter Optimization Facade.")
-        smac = HyperparameterOptimizationFacade(
-            scenario=scenario,
-            target_function=my_target_function,
-        )
+    smac = CostAwareHyperparameterOptimizationFacade(
+        scenario=scenario,
+        target_function=my_target_function,
+        overwrite=True
+    )
 
     # 4. Run the optimization
     incumbent = smac.optimize()

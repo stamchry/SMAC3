@@ -12,6 +12,7 @@ from smac.facade.hyperparameter_optimization_facade import (
 )
 from smac.initial_design.sobol_design import SobolInitialDesign
 from smac.model.cost_aware_model import CostAwareModel
+from smac.runhistory.encoder.cost_aware_encoder import RunHistoryCostAwareEncoder
 from smac.scenario import Scenario
 from smac.utils.logging import get_logger
 
@@ -87,3 +88,8 @@ class CostAwareHyperparameterOptimizationFacade(HyperparameterOptimizationFacade
             n_configs=1,
             max_ratio=max_ratio,
         )
+
+    @staticmethod
+    def get_runhistory_encoder(scenario: Scenario) -> RunHistoryCostAwareEncoder:  # type: ignore[override]
+        """Returns the runhistory encoder for the cost-aware model."""
+        return RunHistoryCostAwareEncoder(scenario=scenario)

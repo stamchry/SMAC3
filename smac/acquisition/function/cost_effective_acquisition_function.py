@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from ConfigSpace import Configuration
@@ -10,7 +10,6 @@ from smac.acquisition.function.abstract_acquisition_function import (
     AbstractAcquisitionFunction,
 )
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
-from smac.runhistory import RunHistory
 from smac.scenario import Scenario
 
 
@@ -24,45 +23,37 @@ class CostEffectiveAcquisition(AbstractAcquisitionFunction):
     def __init__(self, scenario: Scenario):
         super().__init__()
         self._scenario = scenario
-        self._runhistory: Optional[RunHistory] = None
-        self._cost_model = HandCraftedCostModel(self._scenario.configspace, seed=self._scenario.seed)
-
-    def set_runhistory(self, runhistory: RunHistory) -> None:
-        """Sets the runhistory, which is required to get cost data."""
-        self._runhistory = runhistory
+        self._cost_model = HandCraftedCostModel(self._scenario.configspace)
+        self._X_init_arrays: np.ndarray | None = None
 
     def _update(self, **kwargs: Any) -> None:
         """
-        Updates the cost model with the latest data from the runhistory.
-        The main performance model is ignored here, but we call super() to keep the interface.
+        Updates the cost model with the latest data from the Y matrix and stores
+        the evaluated configurations (X) for later use in _compute.
         """
-        super()._update(**kwargs)
-        if self._runhistory is None:
+        X = kwargs.get("X")
+        Y = kwargs.get("Y")
+
+        if Y is None or Y.ndim != 2 or Y.shape[1] != 2:
             return
 
-        # Use the new method to get runtime data
-        runtime_data, Y_runtimes = self._runhistory.get_runtime_data()
-        if len(runtime_data) > 0:
-            # Convert list of configs to numpy array before training
-            X_array = np.array([c.get_array() for c in runtime_data])
-            self._cost_model.train(X_array, Y_runtimes.reshape(-1, 1))
+        # The second column of Y is the cost/runtime
+        y_cost = Y[:, 1]
+        self._cost_model.train(X, y_cost.reshape(-1, 1))
+
+        # Store the configurations that have been evaluated
+        self._X_init_arrays = X
 
     def _compute(self, X: np.ndarray) -> np.ndarray:
         """
         Takes a set of candidate configurations and returns acquisition values
         that lead to the selection of the single most cost-effective point.
         """
-        if self._runhistory is None:
-            raise RuntimeError("Runhistory must be set before computing the acquisition value.")
-
         if X.shape[0] <= 1:
             return np.ones((X.shape[0], 1))
 
         candidate_configs = [Configuration(self._scenario.configspace, vector=x) for x in X]
         candidate_arrays = np.copy(X)
-
-        X_init_configs = self._runhistory.get_configs()
-        X_init_arrays = np.array([c.get_array() for c in X_init_configs]) if X_init_configs else None
 
         while len(candidate_configs) > 1:
             # 1. Exclude most expensive point
@@ -76,8 +67,8 @@ class CostEffectiveAcquisition(AbstractAcquisitionFunction):
                 break
 
             # 2. Exclude point closest to X_init
-            if X_init_arrays is not None and X_init_arrays.shape[0] > 0:
-                distances = cdist(candidate_arrays, X_init_arrays)
+            if self._X_init_arrays is not None and self._X_init_arrays.shape[0] > 0:
+                distances = cdist(candidate_arrays, self._X_init_arrays)
                 min_dist_to_init = np.min(distances, axis=1)
                 closest_idx = np.argmin(min_dist_to_init)
 

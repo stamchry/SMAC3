@@ -15,15 +15,8 @@ class HandCraftedCostModel(AbstractModel):
         self,
         configspace: ConfigurationSpace,
         instance_features: dict[str, list[int | float]] | None = None,
-        pca_components: int | None = 7,
-        seed: int = 0,
     ):
-        super().__init__(
-            configspace=configspace,
-            instance_features=instance_features,
-            pca_components=pca_components,
-            seed=seed,
-        )
+        super().__init__(configspace=configspace, instance_features=instance_features)
         self._model = LinearRegression()
 
     def _train(self, X: np.ndarray, Y: np.ndarray) -> HandCraftedCostModel:

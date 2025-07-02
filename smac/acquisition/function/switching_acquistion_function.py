@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -15,10 +15,7 @@ logger = get_logger(__name__)
 
 
 class SwitchingAcquisition(AbstractAcquisitionFunction):
-    """
-    A wrapper acquisition function that switches from an initial design strategy
-    to a main acquisition function after a certain budget has been consumed.
-    """
+    """Switches between two acquisition functions based on a budget."""
 
     def __init__(
         self,
@@ -29,48 +26,48 @@ class SwitchingAcquisition(AbstractAcquisitionFunction):
     ):
         super().__init__()
         self._scenario = scenario
-        self._runhistory: Optional[RunHistory] = None
         self._initial_acquisition = initial_acquisition
         self._main_acquisition = main_acquisition
-
-        if self._scenario.walltime_limit is None:
-            raise ValueError("SwitchingAcquisition requires a walltime_limit to be set in the Scenario.")
-
         self._switch_budget = self._scenario.walltime_limit * switch_budget_factor
         self._switched = False
-
-    def set_runhistory(self, runhistory: RunHistory) -> None:
-        """Sets the runhistory for this and the wrapped acquisition functions."""
-        self._runhistory = runhistory
-
-        # Pass the runhistory to the wrapped acquisition functions if they need it
-        if hasattr(self._initial_acquisition, "set_runhistory"):
-            self._initial_acquisition.set_runhistory(runhistory)  # type: ignore[attr-defined]
-
-        if hasattr(self._main_acquisition, "set_runhistory"):
-            self._main_acquisition.set_runhistory(runhistory)  # type: ignore[attr-defined]
+        self._consumed_budget = 0.0
+        self._runhistory: RunHistory | None = None
 
     def _update(self, **kwargs: Any) -> None:
-        """Updates both the initial and main acquisition functions."""
-        # The model is set by the public `update` method before this is called.
-        if self._model is None:
-            raise RuntimeError("Model has not been set. Call `update` with a model first.")
+        """
+        This method is called by the abstract parent class to update the child
+        acquisition functions and the consumed budget.
+        """
+        # The parent `update` method has already set self._model and self._runhistory.
+        if self._model is None or self._runhistory is None:
+            return
 
-        # Now, update the wrapped acquisition functions
-        self._initial_acquisition.update(model=self._model, **kwargs)
-        self._main_acquisition.update(model=self._model, **kwargs)
+        # Get Y from kwargs to calculate the budget.
+        Y = kwargs.get("Y")
+
+        # Update consumed budget from the cost column of the Y matrix
+        if Y is not None and Y.ndim == 2 and Y.shape[1] == 2:
+            self._consumed_budget = np.sum(Y[:, 1])
+
+        # Propagate the update call to children.
+        # We must explicitly pass the model and runhistory that this object holds.
+        # The remaining arguments (X, Y, eta, etc.) are in `kwargs`.
+        self._initial_acquisition.update(
+            model=self._model,
+            runhistory=self._runhistory,
+            consumed_budget=self._consumed_budget,
+            **kwargs,
+        )
+        self._main_acquisition.update(
+            model=self._model,
+            runhistory=self._runhistory,
+            consumed_budget=self._consumed_budget,
+            **kwargs,
+        )
 
     def _compute(self, X: np.ndarray) -> np.ndarray:
-        """
-        Computes the acquisition values. Delegates to the initial or main
-        acquisition function depending on the consumed budget.
-        """
-        if self._runhistory is None:
-            raise RuntimeError("Runhistory must be set before computing the acquisition value.")
-
-        consumed_budget = self._runhistory.get_total_cost()
-
-        if not self._switched and consumed_budget < self._switch_budget:
+        """Computes the acquisition value for a given point X."""
+        if not self._switched and self._consumed_budget < self._switch_budget:
             return self._initial_acquisition._compute(X)
         else:
             if not self._switched:

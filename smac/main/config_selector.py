@@ -17,8 +17,6 @@ from smac.callback.callback import Callback
 from smac.initial_design import AbstractInitialDesign
 from smac.main.exceptions import ConfigurationSpaceExhaustedException
 from smac.model.abstract_model import AbstractModel
-from smac.model.cost_aware_model import CostAwareModel
-from smac.acquisition.function.switching_acquistion_function import SwitchingAcquisition
 from smac.random_design.abstract_random_design import AbstractRandomDesign
 from smac.runhistory.encoder.abstract_encoder import AbstractRunHistoryEncoder
 from smac.runhistory.runhistory import RunHistory
@@ -103,14 +101,6 @@ class ConfigSelector:
         self._acquisition_function = acquisition_function
         self._random_design = random_design
         self._callbacks = callbacks if callbacks is not None else []
-
-        # For cost-aware models, we use isinstance for a type-safe check that mypy understands.
-        if isinstance(self._model, CostAwareModel):
-            self._model.set_runhistory(self._runhistory)
-
-        # We do the same for the switching acquisition function.
-        if isinstance(self._acquisition_function, SwitchingAcquisition):
-            self._acquisition_function.set_runhistory(self._runhistory)
 
         self._initial_design_configs = initial_design.select_configurations()
         if len(self._initial_design_configs) == 0:
@@ -212,10 +202,12 @@ class ConfigSelector:
 
                 self._acquisition_function.update(
                     model=self._model,
+                    runhistory=self._runhistory,
                     eta=best_observation,
                     incumbent_array=x_best_array,
                     num_data=len(self._get_evaluated_configs()),
-                    X=X_configurations,
+                    X=X,
+                    Y=Y,
                 )
 
             # We want to cache how many entries we used because if we have the same number of entries
