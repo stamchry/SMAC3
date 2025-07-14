@@ -162,10 +162,10 @@ class TargetFunctionRunner(AbstractSerialRunner):
             kwargs["budget"] = budget
 
         # Presetting
-        cost: float | list[float] = self._crash_cost
+        cost: float | list[float] | dict[str, float] = self._crash_cost
         runtime = 0.0
         cpu_time = runtime
-        additional_info = {}
+        additional_info: dict[Any, Any] = {}
         status = StatusType.CRASHED
 
         # If memory limit or walltime limit is set, we wanna use pynisher
@@ -196,7 +196,6 @@ class TargetFunctionRunner(AbstractSerialRunner):
         except MemoryLimitException:
             status = StatusType.MEMORYOUT
         except Exception as e:
-            cost = np.asarray(cost).squeeze().tolist()
             additional_info = {
                 "traceback": traceback.format_exc(),
                 "error": repr(e),
@@ -204,46 +203,72 @@ class TargetFunctionRunner(AbstractSerialRunner):
             status = StatusType.CRASHED
 
         if status != StatusType.SUCCESS:
-            return status, cost, runtime, cpu_time, additional_info
+            # We have to make sure that the cost is a float or a list of floats
+            cost_for_runhistory: float | list[float]
+            if isinstance(cost, dict):
+                cost_for_runhistory = list(cost.values())
+            else:
+                cost_for_runhistory = cost
 
+            cost_for_runhistory = np.asarray(cost_for_runhistory).squeeze().tolist()
+            return status, cost_for_runhistory, runtime, cpu_time, additional_info
+
+        # We unpack the result from the target function
         if isinstance(rval, tuple):
             result, additional_info = rval
         else:
             result, additional_info = rval, {}
 
-        # Do some sanity checking (for multi objective)
-        error = f"Returned costs {result} does not match the number of objectives {self._objectives}."
+        # If we use a cost_aware_objective, we expect a dictionary from the target function.
+        # We unpack the dictionary here into the cost and runtime variables.
+        if self._scenario.cost_aware and self._scenario.cost_aware_objective is not None:
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    f"When `cost_aware_objective` is used, the target function must return a dictionary. "
+                    f"Got {type(result)} instead."
+                )
 
-        # If dict convert to array and make sure the order is correct
-        if isinstance(result, dict):
-            if len(result) != len(self._objectives):
-                raise RuntimeError(error)
+            if self._scenario.cost_aware_objective not in result:
+                raise RuntimeError(
+                    f"Cost-aware objective {self._scenario.cost_aware_objective} not found in returned "
+                    f"dictionary {result}."
+                )
+
+            # The cost objective goes into the runtime
+            runtime = result[self._scenario.cost_aware_objective]
+
+            # The main objectives go into the cost
+            costs: list[float] = []
+            for objective in self._objectives:
+                if objective not in result:
+                    raise RuntimeError(f"Objective {objective} not found in returned dictionary {result}.")
+                costs.append(result[objective])
+
+            if len(costs) == 1:
+                cost = costs[0]
+            else:
+                cost = costs
+        else:
+            # Otherwise, the result is the cost
+            cost = result
+
+        # Do some sanity checking for multi-objective
+        if isinstance(cost, dict):
+            if len(cost) != len(self._objectives):
+                raise RuntimeError(f"Returned costs {cost} does not match the number of objectives {self._objectives}.")
 
             ordered_cost: list[float] = []
             for name in self._objectives:
-                if name not in result:
+                if name not in cost:
                     raise RuntimeError(f"Objective {name} was not found in the returned costs.")  # noqa: E713
 
-                ordered_cost.append(result[name])
+                ordered_cost.append(cost[name])
 
-            result = ordered_cost
+            cost = ordered_cost
 
-        if isinstance(result, list):
-            if len(result) != len(self._objectives):
-                raise RuntimeError(error)
-
-        if isinstance(result, float):
-            if isinstance(self._objectives, list) and len(self._objectives) != 1:
-                raise RuntimeError(error)
-
-        cost = result
-
-        if cost is None:
-            status = StatusType.CRASHED
-            cost = self._crash_cost
-
-        # We want to get either a float or a list of floats.
-        cost = np.asarray(cost).squeeze().tolist()
+        if isinstance(cost, list):
+            if len(cost) != len(self._objectives):
+                raise RuntimeError(f"Returned costs {cost} does not match the number of objectives {self._objectives}.")
 
         return status, cost, runtime, cpu_time, additional_info
 

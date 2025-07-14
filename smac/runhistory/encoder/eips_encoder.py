@@ -47,19 +47,26 @@ class RunHistoryEIPSEncoder(AbstractRunHistoryEncoder):
             else:
                 X[row, :] = conf_vector
 
+            # The runner ensures that the performance is in `run.cost` and the
+            # cost (either measured time or from cost_objective) is in `run.time`.
+            # We simply extract them here.
+            performance = run.cost
+            cost = run.time
+
             if self._n_objectives > 1:
                 assert self._multi_objective_algorithm is not None
-                assert isinstance(run.cost, list)
+                if not isinstance(performance, list):
+                    raise TypeError(f"Multi-objective cost must be a list, but got {type(performance)}.")
 
                 # Let's normalize y here
                 # We use the objective_bounds calculated by the runhistory
-                y_ = normalize_costs(run.cost, self.runhistory.objective_bounds)
+                y_ = normalize_costs(performance, self.runhistory.objective_bounds)
                 y_agg = self._multi_objective_algorithm(y_)
                 y[row, 0] = y_agg
             else:
-                y[row, 0] = run.cost
+                y[row, 0] = performance
 
-            y[row, 1] = run.time
+            y[row, 1] = cost
 
         y_transformed = self.transform_response_values(values=y)
 

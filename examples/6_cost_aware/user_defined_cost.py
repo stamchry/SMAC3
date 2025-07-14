@@ -10,34 +10,28 @@ from ConfigSpace import Configuration, ConfigurationSpace, UniformFloatHyperpara
 from smac.facade.cost_aware_facade import (
     CostAwareHyperparameterOptimizationFacade,
 )
-from smac.facade.hyperparameter_optimization_facade import (
-    HyperparameterOptimizationFacade,
-)
 from smac.scenario import Scenario
 
 # Configure logging to see SMAC's output, including the acquisition function switch
 logging.basicConfig(level=logging.INFO)
 
 
-def my_target_function(config: Configuration, seed: int | None = None) -> float:
+def my_target_function(config: Configuration, seed: int | None = None) -> dict[str, float]:
     """
-    A simple target function to be minimized. It returns only the loss.
-    SMAC will automatically measure the execution time as the cost.
-
-    The performance (loss) is a simple quadratic function with a minimum at x=5.
-    The cost (runtime) increases quadratically with x, making higher values
-    of x more expensive to evaluate.
+    A simple target function to be minimized. It returns a dictionary
+    containing the loss and the cost.
     """
     x = config["x"]
 
     # The cost is a function of the hyperparameter x
     cost = 0.5 + (x / 10)
+    #cost = (3-x)**2
     loss = (x - 5) ** 2
 
     # Simulate the evaluation time
+    time.sleep(0.1)  # We sleep for a short time to not slow down the example
 
-    # In a real scenario, you only need to return the loss.
-    return {'loss': loss, 'cost': cost}
+    return {"loss": loss, "cost": cost}
 
 
 if __name__ == "__main__":
@@ -48,12 +42,14 @@ if __name__ == "__main__":
     # 2. Define the scenario
     scenario = Scenario(
         configspace,
-        name="double_objective_example",
-        objectives=["loss", "cost"],  # Name of the objective
+        name="new_code4",
+        objectives="loss",  # Name of the objective
         # --- Key parameters for cost-aware optimization ---
         cost_aware=True,
-        walltime_limit=90,  # Total budget in seconds
+        cost_aware_objective="cost",  # Name of the cost objective
+        cost_aware_budget=300,  # Total budget in seconds
         # ---
+        n_trials=np.inf,
         seed=1,
     )
 
@@ -88,33 +84,38 @@ if __name__ == "__main__":
 
     # 6. Plot the results
     # We iterate through the runhistory to get paired data for each trial
-    all_runtimes = []
+    all_costs = []
     all_losses = []
     all_xs = []
     for k, v in smac.runhistory.items():
         if v.time > 0:  # Ensure the trial was actually run
             config = smac.runhistory.get_config(k.config_id)
-            all_runtimes.append(v.time)
+            all_costs.append(v.time)
             all_losses.append(v.cost)
             all_xs.append(config["x"])
 
     # Convert to numpy arrays for plotting
-    all_runtimes = np.array(all_runtimes)
+    all_costs = np.array(all_costs)
     all_losses = np.array(all_losses)
     all_xs = np.array(all_xs)
-    trial_indices = np.arange(len(all_runtimes))
+    trial_indices = np.arange(len(all_costs))
 
     # Find the point where the switch happened
-    switch_budget = scenario.walltime_limit * 0.125  # Default fraction
-    cumulative_runtimes = np.cumsum(all_runtimes)
+    switch_budget_factor = 1 / 8  # Default from SwitchingAcquisition
+    switch_budget = scenario.cost_aware_budget * switch_budget_factor
+    cumulative_costs = np.cumsum(all_costs)
     # Handle cases where the run is too short to switch
-    switch_indices = np.where(cumulative_runtimes >= switch_budget)[0]
+    switch_indices = np.where(cumulative_costs >= switch_budget)[0]
     switch_index = switch_indices[0] if len(switch_indices) > 0 else -1
 
-    # Plot 1: Loss vs. Runtime (Trade-off)
-    plt.figure(figsize=(10, 6))
-    plt.scatter(all_runtimes, all_losses, alpha=0.5, label="All Evaluated Trials")
-    plt.scatter(
+    # Create a 2x2 grid of subplots
+    fig, axs = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle("SMAC Cost-Aware Optimization Analysis", fontsize=16)
+
+    # Plot 1: Loss vs. Cost (Trade-off)
+    ax = axs[0, 0]
+    ax.scatter(all_costs, all_losses, alpha=0.5, label="Evaluated Trials")
+    ax.scatter(
         [average_runtime],
         [incumbent_loss],
         color="red",
@@ -123,55 +124,51 @@ if __name__ == "__main__":
         zorder=10,
         label="Final Incumbent",
     )
-    plt.title("Performance vs. Runtime Trade-off")
-    plt.xlabel("Measured Runtime (s)")
-    plt.ylabel("Loss (Objective Value)")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig("tradeoff_plot.png")
+    ax.set_title("Performance vs. Cost Trade-off")
+    ax.set_xlabel("Cost")
+    ax.set_ylabel("Loss (Objective Value)")
+    ax.legend()
+    ax.grid(True)
 
     # Plot 2: Loss vs. Trial Number (Convergence)
-    plt.figure(figsize=(10, 6))
-    plt.plot(trial_indices, all_losses, "-o", alpha=0.5)
+    ax = axs[0, 1]
+    ax.plot(trial_indices, all_losses, "-o", alpha=0.5, label="Loss per Trial")
     if switch_index != -1:
-        plt.axvline(
+        ax.axvline(
             x=switch_index,
             color="r",
             linestyle="--",
             label=f"Switch to EICool (Trial {switch_index})",
         )
-    plt.title("Convergence Over Time")
-    plt.xlabel("Trial Number")
-    plt.ylabel("Loss (Objective Value)")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig("convergence_plot.png")
+    ax.set_title("Convergence Over Time")
+    ax.set_xlabel("Trial Number")
+    ax.set_ylabel("Loss (Objective Value)")
+    ax.legend()
+    ax.grid(True)
 
-    # Plot 3: Runtime vs. Trial Number (Cost Strategy)
-    plt.figure(figsize=(10, 6))
-    plt.plot(trial_indices, all_runtimes, "-o", alpha=0.5)
+    # Plot 3: Cost vs. Trial Number (Cost Strategy)
+    ax = axs[1, 0]
+    ax.plot(trial_indices, all_costs, "-o", alpha=0.5, label="Cost per Trial")
     if switch_index != -1:
-        plt.axvline(
+        ax.axvline(
             x=switch_index,
             color="r",
             linestyle="--",
             label=f"Switch to EICool (Trial {switch_index})",
         )
-    plt.title("Runtime Cost Strategy Over Time")
-    plt.xlabel("Trial Number")
-    plt.ylabel("Measured Runtime (s)")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig("runtime_strategy_plot.png")
+    ax.set_title("Cost Strategy Over Time")
+    ax.set_xlabel("Trial Number")
+    ax.set_ylabel("Cost")
+    ax.legend()
+    ax.grid(True)
 
     # Plot 4: Loss vs. x with the real loss function
-    x_vals = np.linspace(0, 10, 100)  # Range of x values
+    ax = axs[1, 1]
+    x_vals = np.linspace(0, 6, 100)  # Range of x values
     loss_vals = (x_vals - 5) ** 2  # Calculate loss for each x
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_vals, loss_vals, label="True Loss Function", color="blue")
-    plt.scatter(all_xs, all_losses, color="red", label="Evaluated Configurations", alpha=0.5)
-    plt.scatter(
+    ax.plot(x_vals, loss_vals, label="True Loss Function", color="blue")
+    ax.scatter(all_xs, all_losses, color="red", label="Evaluated Configurations", alpha=0.5)
+    ax.scatter(
         [incumbent["x"]],
         [incumbent_loss],
         color="green",
@@ -180,11 +177,13 @@ if __name__ == "__main__":
         zorder=10,
         label="Final Incumbent",
     )
-    plt.xlabel("x")
-    plt.ylabel("Loss")
-    plt.title("Loss vs. x with Evaluated Configurations")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig("loss_vs_x_plot.png")
+    ax.set_xlabel("Hyperparameter 'x'")
+    ax.set_ylabel("Loss")
+    ax.set_title("Loss vs. Hyperparameter 'x'")
+    ax.legend()
+    ax.grid(True)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig("detailed_analysis_plots.png")
 
     plt.show()

@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from smac.acquisition.function.cost_effective_acquisition_function import (
-    CostEffectiveAcquisition,
-)
 from smac.acquisition.function.expected_improvement import EICool
+from smac.acquisition.function.initial_design_cost_aware_acquisition import (
+    InitialDesignCostAwareAcquisition,
+)
 from smac.acquisition.function.switching_acquistion_function import SwitchingAcquisition
 from smac.facade.hyperparameter_optimization_facade import (
     HyperparameterOptimizationFacade,
 )
 from smac.initial_design.sobol_design import SobolInitialDesign
 from smac.model.cost_aware_model import CostAwareModel
+from smac.model.hand_crafted_cost_model import HandCraftedCostModel
+from smac.model.random_forest.random_forest import RandomForest
 from smac.runhistory.encoder.cost_aware_encoder import RunHistoryCostAwareEncoder
 from smac.scenario import Scenario
 from smac.utils.logging import get_logger
@@ -42,15 +44,44 @@ class CostAwareHyperparameterOptimizationFacade(HyperparameterOptimizationFacade
         max_depth: int = 2**20,
         bootstrapping: bool = True,
     ) -> CostAwareModel:
-        """Returns a cost-aware model that wraps a RandomForest and a cost model."""
-        return CostAwareModel(
-            scenario=scenario,
+        """Returns a cost-aware model that wraps a RandomForest and a cost model.
+
+        Parameters
+        ----------
+        n_trees : int, defaults to 10
+            The number of trees in the random forest.
+        ratio_features : float, defaults to 1.0
+            The ratio of features that are considered for splitting.
+        min_samples_split : int, defaults to 2
+            The minimum number of data points to perform a split.
+        min_samples_leaf : int, defaults to 1
+            The minimum number of data points in a leaf.
+        max_depth : int, defaults to 2**20
+            The maximum depth of a single tree.
+        bootstrapping : bool, defaults to True
+            Enables bootstrapping.
+        """
+        performance_model = RandomForest(
+            log_y=True,
             n_trees=n_trees,
+            bootstrapping=bootstrapping,
             ratio_features=ratio_features,
             min_samples_split=min_samples_split,
             min_samples_leaf=min_samples_leaf,
             max_depth=max_depth,
-            bootstrapping=bootstrapping,
+            configspace=scenario.configspace,
+            instance_features=scenario.instance_features,
+            seed=scenario.seed,
+        )
+        cost_model = HandCraftedCostModel(
+            configspace=scenario.configspace,
+            instance_features=scenario.instance_features,
+        )
+
+        return CostAwareModel(
+            scenario=scenario,
+            performance_model=performance_model,
+            cost_model=cost_model,
         )
 
     @staticmethod
@@ -60,7 +91,7 @@ class CostAwareHyperparameterOptimizationFacade(HyperparameterOptimizationFacade
         xi: float = 0.0,
     ) -> SwitchingAcquisition:
         """Returns a switching acquisition function that handles the cost-effective initial design."""
-        initial_acquisition = CostEffectiveAcquisition(scenario)
+        initial_acquisition = InitialDesignCostAwareAcquisition(scenario)
         main_acquisition = EICool(scenario=scenario, xi=xi)
 
         return SwitchingAcquisition(

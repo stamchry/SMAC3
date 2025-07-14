@@ -13,7 +13,7 @@ from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 from smac.scenario import Scenario
 
 
-class CostEffectiveAcquisition(AbstractAcquisitionFunction):
+class InitialDesignCostAwareAcquisition(AbstractAcquisitionFunction):
     """
     This acquisition function implements the 'Algorithm 1 Cost-effective initial design'
     as a procedural acquisition function. It guides the acquisition maximizer to select

@@ -28,7 +28,14 @@ class SwitchingAcquisition(AbstractAcquisitionFunction):
         self._scenario = scenario
         self._initial_acquisition = initial_acquisition
         self._main_acquisition = main_acquisition
-        self._switch_budget = self._scenario.walltime_limit * switch_budget_factor
+
+        if not self._scenario.cost_aware or self._scenario.cost_aware_budget is None:
+            raise ValueError(
+                "`cost_aware` must be True and `cost_aware_budget` must be set in the scenario "
+                "to use SwitchingAcquisition."
+            )
+
+        self._switch_budget = self._scenario.cost_aware_budget * switch_budget_factor
         self._switched = False
         self._consumed_budget = 0.0
         self._runhistory: RunHistory | None = None
@@ -38,29 +45,30 @@ class SwitchingAcquisition(AbstractAcquisitionFunction):
         This method is called by the abstract parent class to update the child
         acquisition functions and the consumed budget.
         """
-        # The parent `update` method has already set self._model and self._runhistory.
-        if self._model is None or self._runhistory is None:
-            return
-
         # Get Y from kwargs to calculate the budget.
         Y = kwargs.get("Y")
 
         # Update consumed budget from the cost column of the Y matrix
+        # The cost is log-transformed in the encoder, so we need to reverse it.
         if Y is not None and Y.ndim == 2 and Y.shape[1] == 2:
-            self._consumed_budget = np.sum(Y[:, 1])
+            # The encoder does log(1 + cost), so we do exp(y) - 1
+            # We calculate the budget from all trials, not just the last batch.
+            self._consumed_budget = np.sum(np.exp(Y[:, 1]) - 1)
+            logger.info(f"Consumed budget: {self._consumed_budget:.4f}, " f"Switch budget: {self._switch_budget:.4f}")
 
         # Propagate the update call to children.
         # We must explicitly pass the model and runhistory that this object holds.
         # The remaining arguments (X, Y, eta, etc.) are in `kwargs`.
+        if self._model is None:
+            raise ValueError("Model has not been updated yet.")
+
         self._initial_acquisition.update(
             model=self._model,
-            runhistory=self._runhistory,
             consumed_budget=self._consumed_budget,
             **kwargs,
         )
         self._main_acquisition.update(
             model=self._model,
-            runhistory=self._runhistory,
             consumed_budget=self._consumed_budget,
             **kwargs,
         )

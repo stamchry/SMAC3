@@ -196,102 +196,13 @@ class EI(AbstractAcquisitionFunction):
             return log_ei.reshape((-1, 1))
 
 
-class EIPS(EI):
-    r"""Expected Improvement per Second acquisition function
-
-    :math:`EI(X) := \frac{\mathbb{E}\left[\max\{0,f(\mathbf{X^+})-f_{t+1}(\mathbf{X})-\xi\right]\}]}{np.log(r(x))}`,
-    with :math:`f(X^+)` as the best location and :math:`r(x)` as runtime.
-
-    Parameters
-    ----------
-    xi : float, defaults to 0.0
-        Controls the balance between exploration and exploitation of the acquisition function.
-    """
-
-    def __init__(self, xi: float = 0.0) -> None:
-        super(EIPS, self).__init__(xi=xi)
-
-    @property
-    def name(self) -> str:  # noqa: D102
-        return "Expected Improvement per Second"
-
-    def _compute(self, X: np.ndarray) -> np.ndarray:
-        """Compute EI per second acquisition value
-
-        Parameters
-        ----------
-        X : np.ndarray [N, D]
-            The input points where the acquisition function should be evaluated. The dimensionality of X is (N, D),
-            with N as the number of points to evaluate at and D is the number of dimensions of one X.
-
-        Returns
-        -------
-        np.ndarray [N,1]
-            Acquisition function values wrt X.
-
-        Raises
-        ------
-        ValueError
-            If the mean has the wrong shape, should have shape (-1, 2).
-        ValueError
-            If the variance has the wrong shape, should have shape (-1, 2).
-        ValueError
-            If `update` has not been called before (current incumbent value `eta` unspecified).
-        ValueError
-            If EIPS is < 0 for at least one sample.
-        """
-        assert self._model is not None
-        if len(X.shape) == 1:
-            X = X[:, np.newaxis]
-
-        m, v = self._model.predict_marginalized(X)
-        if m.shape[1] != 2:
-            raise ValueError(f"m has wrong shape: {m.shape} != (-1, 2)")
-        if v.shape[1] != 2:
-            raise ValueError(f"v has wrong shape: {v.shape} != (-1, 2)")
-
-        m_cost = m[:, 0]
-        v_cost = v[:, 0]
-
-        # The model already predicts log(runtime)
-        m_runtime = m[:, 1]
-        s = np.sqrt(v_cost)
-
-        if self._eta is None:
-            raise ValueError(
-                "No current best specified. Call update("
-                "eta=<int>) to inform the acquisition function "
-                "about the current best value."
-            )
-
-        def calculate_f() -> np.ndarray:
-            z = (self._eta - m_cost - self._xi) / s
-            f = (self._eta - m_cost - self._xi) * norm.cdf(z) + s * norm.pdf(z)
-            f = f / m_runtime
-
-            return f
-
-        if np.any(s == 0.0):
-            # if std is zero, we have observed x on all instances
-            # using a RF, std should be never exactly 0.0
-            # Avoid zero division by setting all zeros in s to one.
-            # Consider the corresponding results in f to be zero.
-            logger.warning("Predicted std is 0.0 for at least one sample.")
-            s_copy = np.copy(s)
-            s[s_copy == 0.0] = 1.0
-            f = calculate_f()
-            f[s_copy == 0.0] = 0.0
-        else:
-            f = calculate_f()
-
-        if (f < 0).any():
-            raise ValueError("Expected Improvement per Second is smaller than 0 " "for at least one sample.")
-
-        return f.reshape((-1, 1))
-
-
 class EICool(EI):
     """EI-cool acquisition function.
+
+    This acquisition function uses a cooling schedule for the cost exponent `alpha`.
+    When the remaining budget is high, `alpha` is close to 0, prioritizing improvement.
+    As the budget depletes, `alpha` approaches 1, prioritizing cheaper configurations.
+    If `alpha` is set to a fixed value, the cooling schedule is disabled.
 
     Parameters
     ----------
@@ -301,6 +212,9 @@ class EICool(EI):
         Controls the balance between exploration and exploitation.
     log : bool, defaults to False
         Whether the function values are in log-space.
+    alpha : float | None, defaults to None
+        The exponent for the cost. If None, a cooling schedule is used.
+        If a float, `alpha` is fixed to that value.
     """
 
     def __init__(
@@ -308,17 +222,20 @@ class EICool(EI):
         scenario: Scenario,
         xi: float = 0.0,
         log: bool = False,
+        alpha: float | None = None,
     ):
         super().__init__(xi=xi, log=log)
         self._scenario = scenario
         self._consumed_budget: float = 0.0
+        self._fixed_alpha = alpha
 
-        if self._scenario.walltime_limit is None:
-            raise ValueError("EICool requires a walltime_limit to be set in the Scenario.")
+        if self._fixed_alpha is None:
+            if not self._scenario.cost_aware or self._scenario.cost_aware_budget is None:
+                raise ValueError("EICool with cooling schedule requires a cost_aware_budget to be set.")
 
-        # We get the initial budget from the switching acquisition function's default
-        self._tau = self._scenario.walltime_limit
-        self._tau_init = self._scenario.walltime_limit * (1 / 8)
+            # We get the initial budget from the switching acquisition function's default
+            self._tau = self._scenario.cost_aware_budget
+            self._tau_init = self._scenario.cost_aware_budget * (1 / 8)
 
     @property
     def name(self) -> str:  # noqa: D102
@@ -343,16 +260,44 @@ class EICool(EI):
         cost_values, _ = self._model.predict_cost(X)
         cost_values = np.maximum(cost_values, 1e-9)  # Avoid division by zero
 
-        tau_k = self._consumed_budget
-
-        if self._tau <= self._tau_init:
-            alpha = 1.0
+        if self._fixed_alpha is not None:
+            alpha = self._fixed_alpha
         else:
-            alpha = (self._tau - tau_k) / (self._tau - self._tau_init)
+            tau_k = self._consumed_budget
+            if self._tau <= self._tau_init:
+                alpha = 1.0
+            else:
+                alpha = (self._tau - tau_k) / (self._tau - self._tau_init)
 
-        # Alpha should be between 0 and 1
-        alpha = np.clip(alpha, 0, 1)
+            # Alpha should be between 0 and 1
+            alpha = np.clip(alpha, 0, 1)
 
         ei_cool_values = ei_values / (cost_values**alpha)
 
         return ei_cool_values
+
+
+class EIPS(EICool):
+    r"""Expected Improvement per Second acquisition function.
+
+    This is equivalent to EICool with a fixed alpha of 1.0.
+
+    :math:`EI(X) := \frac{\mathbb{E}\left[\max\{0,f(\mathbf{X^+})-f_{t+1}(\mathbf{X})-\xi\right]\}]}{c(x)}`,
+    with :math:`f(X^+)` as the best location and :math:`c(x)` as the cost.
+
+    Parameters
+    ----------
+    scenario: Scenario
+        The scenario object.
+    xi : float, defaults to 0.0
+        Controls the balance between exploration and exploitation.
+    log : bool, defaults to False
+        Whether the function values are in log-space.
+    """
+
+    def __init__(self, scenario: Scenario, xi: float = 0.0, log: bool = False):
+        super().__init__(scenario=scenario, xi=xi, log=log, alpha=1.0)
+
+    @property
+    def name(self) -> str:  # noqa: D102
+        return "Expected Improvement per Second"

@@ -5,8 +5,6 @@ from typing import Any
 import numpy as np
 
 from smac.model.abstract_model import AbstractModel
-from smac.model.hand_crafted_cost_model import HandCraftedCostModel
-from smac.model.random_forest.random_forest import RandomForest
 from smac.scenario import Scenario
 
 
@@ -16,11 +14,12 @@ class CostAwareModel(AbstractModel):
     def __init__(
         self,
         scenario: Scenario,
-        **kwargs: Any,
+        performance_model: AbstractModel,
+        cost_model: AbstractModel,
     ):
         super().__init__(configspace=scenario.configspace)
-        self.performance_model = RandomForest(scenario.configspace, **kwargs)
-        self.cost_model = HandCraftedCostModel(scenario.configspace)
+        self.performance_model = performance_model
+        self.cost_model = cost_model
 
     def _train(self, X: np.ndarray, Y: np.ndarray) -> CostAwareModel:
         """

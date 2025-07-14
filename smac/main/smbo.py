@@ -84,6 +84,8 @@ class SMBO:
         self._start_time: float | None = None
         self._used_target_function_walltime = 0.0
         self._used_target_function_cputime = 0.0
+        if self._scenario.cost_aware:
+            self._used_cost_aware_budget = 0.0
 
         # Set walltime used method for intensifier
         self._intensifier.used_walltime = lambda: self.used_walltime  # type: ignore
@@ -119,13 +121,22 @@ class SMBO:
         return self._scenario.n_trials - self.runhistory.submitted
 
     @property
+    def remaining_cost_aware_budget(self) -> float:
+        """Subtracts the cost budget with the used cost."""
+        if not self._scenario.cost_aware or self._scenario.cost_aware_budget is None:
+            return np.inf
+
+        return self._scenario.cost_aware_budget - self._used_cost_aware_budget
+
+    @property
     def budget_exhausted(self) -> bool:
         """Checks whether the the remaining walltime, cputime or trials was exceeded."""
         A = self.remaining_walltime <= 0
         B = self.remaining_cputime <= 0
         C = self.remaining_trials <= 0
+        D = self.remaining_cost_aware_budget <= 0
 
-        return A or B or C
+        return A or B or C or D
 
     @property
     def used_walltime(self) -> float:
@@ -343,6 +354,8 @@ class SMBO:
                     logger.info(f"--- Remaining wallclock time: {self.remaining_walltime}")
                     logger.info(f"--- Remaining cpu time: {self.remaining_cputime}")
                     logger.info(f"--- Remaining trials: {self.remaining_trials}")
+                    if self._scenario.cost_aware:
+                        logger.info(f"--- Remaining cost-aware budget: {self.remaining_cost_aware_budget}")
                 else:
                     logger.info("Shutting down because the stop flag was set.")
 
@@ -466,6 +479,15 @@ class SMBO:
             # Update SMAC stats
             self._used_target_function_walltime += float(trial_value.time)
             self._used_target_function_cputime += float(trial_value.cpu_time)
+
+            # Update the cost budget
+            if self._scenario.cost_aware:
+                if self._scenario.cost_aware_objective is not None:
+                    # The cost is returned by the target function
+                    self._used_cost_aware_budget += float(trial_value.time)
+                else:
+                    # The cost is the measured runtime
+                    self._used_cost_aware_budget += float(trial_value.cpu_time)
 
             # Gracefully end optimization if termination cost is reached
             if self._scenario.termination_cost_threshold != np.inf:

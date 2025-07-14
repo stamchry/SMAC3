@@ -44,6 +44,13 @@ class Scenario:
     termination_cost_threshold : float | list[float], defaults to np.inf
         Defines a cost threshold when the optimization should stop. In case of multi-objective, each objective *must* be
         associated with a cost. The optimization stops when all objectives crossed the threshold.
+    cost_aware : bool, defaults to False
+        If True, the optimization is cost-aware.
+    cost_aware_objective : str | None, defaults to None
+        The name of the cost objective. If None, and `cost_aware` is True, the cost objective is set to walltime.
+        If specified, the target function must return a dictionary with the objective and cost.
+    cost_aware_budget : float | int | None, defaults to None
+        The budget for cost-aware optimization. If None, the `walltime_limit` is used
     walltime_limit : float, defaults to np.inf
         The maximum time in seconds that SMAC is allowed to run.
     cputime_limit : float, defaults to np.inf
@@ -100,6 +107,11 @@ class Scenario:
     n_trials: int = 100
     use_default_config: bool = False
 
+    # Cost-aware parameters
+    cost_aware: bool = False
+    cost_aware_objective: str | None = None
+    cost_aware_budget: float | int | None = None
+
     # Algorithm Configuration
     instances: list[str] | None = None
     instance_features: dict[str, list[float]] | None = None
@@ -111,7 +123,6 @@ class Scenario:
     # Others
     seed: int = 0
     n_workers: int = 1
-    cost_aware: bool = False
 
     def __post_init__(self) -> None:
         """Checks whether the config is valid."""
@@ -119,6 +130,29 @@ class Scenario:
         if self.seed == -1:
             seed = random.randint(0, 999999)
             object.__setattr__(self, "seed", seed)
+
+        # Make sure that the objectives are a list of strings
+        if isinstance(self.objectives, str):
+            object.__setattr__(self, "objectives", [self.objectives])
+
+        # Handle the cost-aware budget
+        if self.cost_aware:
+            if self.cost_aware_budget is None:
+                raise ValueError("`cost_aware_budget` must be set when `cost_aware` is True.")
+            else:
+                logger.info(f"Using `cost_aware_budget`: {self.cost_aware_budget}")
+
+        # Check if cost-aware is used with cost_aware_objective
+        if self.cost_aware and self.cost_aware_objective is not None:
+            logger.info(
+                "`cost_aware` is enabled with `cost_aware_objective`. "
+                "The cost will be taken from the target function."
+            )
+        elif self.cost_aware:
+            logger.info(
+                "`cost_aware` is enabled. The cost will be measured as runtime, "
+                "and the budget is taken from `cost_aware_budget`."
+            )
 
         # Transform instances to string if they are not
         if self.instances is not None:
