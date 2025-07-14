@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from smac.acquisition.function.expected_improvement import EICool
 from smac.acquisition.function.initial_design_cost_aware_acquisition import (
     InitialDesignCostAwareAcquisition,
@@ -10,7 +8,7 @@ from smac.acquisition.function.switching_acquistion_function import SwitchingAcq
 from smac.facade.hyperparameter_optimization_facade import (
     HyperparameterOptimizationFacade,
 )
-from smac.initial_design.sobol_design import SobolInitialDesign
+from smac.initial_design.no_initial_design import NoInitialDesign
 from smac.model.cost_aware_model import CostAwareModel
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 from smac.model.random_forest.random_forest import RandomForest
@@ -101,24 +99,14 @@ class CostAwareHyperparameterOptimizationFacade(HyperparameterOptimizationFacade
         )
 
     @staticmethod
-    def get_initial_design(
+    def get_initial_design(  # type: ignore[override]
         scenario: Scenario,
-        *,
-        n_configs: int | None = None,
-        n_configs_per_hyperparamter: int = 10,
-        max_ratio: float = 0.25,
-        additional_configs: list[Any] | None = None,
-    ) -> SobolInitialDesign:
+    ) -> NoInitialDesign:
+        """The main "initial design" is now handled by the SwitchingAcquisition.
+        Therefore, we do not need a dedicated initial design here.
         """
-        The main "initial design" is now handled by the SwitchingAcquisition.
-        We only need one configuration to start the main Bayesian optimization loop.
-        """
-        logger.info("Cost-aware mode: Using Sobol design to generate 1 initial point.")
-        return SobolInitialDesign(
-            scenario=scenario,
-            n_configs=1,
-            max_ratio=max_ratio,
-        )
+        logger.info("Cost-aware mode: Bypassing initial design because it is handled by the acquisition function.")
+        return NoInitialDesign(scenario=scenario)
 
     @staticmethod
     def get_runhistory_encoder(scenario: Scenario) -> RunHistoryCostAwareEncoder:  # type: ignore[override]
