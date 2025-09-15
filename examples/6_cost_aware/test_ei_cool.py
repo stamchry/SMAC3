@@ -58,13 +58,13 @@ if __name__ == "__main__":
         configspace=configspace,
         name="EICoolTestWithHandCraftedCost",
         objectives="cost",  # We are minimizing performance loss
-        n_trials=200,  # Set high, budget will stop us
+        n_trials=np.inf,  # Set high, budget will stop us
         seed=0,
+        deterministic=True,
     )
 
     # 4. Define the Cost Model and its callback
-    # Use a handcrafted model with a formula different from the true cost
-    cost_formula = lambda config: 0.6 + 0.1 * config["x"] ** 2 + 0.1 * abs(config["y"])
+    cost_formula = lambda config: evaluate_config(config)[1]
     cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
     cost_surrogate_callback = CostSurrogateCallback(cost_model=cost_model)
 
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     initial_x, initial_y, bo_x, bo_y = [], [], [], []
     for k, v in smac.runhistory.items():
         config = smac.runhistory.get_config(k.config_id)
-        if config.origin == "Initial design":
+        if config.origin == "Cost Aware Initial Design":
             initial_x.append(config["x"])
             initial_y.append(config["y"])
         else:
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     # Plot Performance Landscape
     contour1 = ax1.contourf(xx, yy, perf_grid, levels=20, cmap="magma")
     fig.colorbar(contour1, ax=ax1, label="Performance Loss")
-    ax1.scatter(initial_x, initial_y, c="blue", edgecolor="white", s=80, label="Initial Design Points", zorder=2)
+    ax1.scatter(initial_x, initial_y, c="blue", edgecolor="white", s=80, label="Cost Aware Initial Design Points", zorder=2)
     ax1.scatter(bo_x, bo_y, c="red", marker="X", edgecolor="white", s=100, label="BO Points (EI-Cool)", zorder=2)
     ax1.set_title("Performance Landscape with Evaluated Points")
     ax1.set_xlabel("x")

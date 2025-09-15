@@ -56,8 +56,9 @@ if __name__ == "__main__":
         configspace=configspace,
         name="CostAwareInitialDesignTest",
         objectives="cost",
-        n_trials=100,  # Set high, budget will stop us
+        n_trials=np.inf,  # Set high, budget will stop us
         seed=2,
+        deterministic=True,
     )
 
     # 4. Define the cost formula and create the HandCrafted Cost Model
@@ -76,8 +77,7 @@ if __name__ == "__main__":
     smac = BlackBoxFacade(
         scenario=scenario,
         initial_design=initial_design,
-        overwrite=True,
-        intensifier=Intensifier(max_config_calls=1, scenario=scenario), # Single call per config, since we test the initial design
+        overwrite=True
     )
 
     # 7. --- Standard Budget-Based Optimization Loop ---
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     for k, v in smac.runhistory.items():
         config = smac.runhistory.get_config(k.config_id)
         # The origin is automatically set by the initial design class
-        if config.origin == "Initial design":
+        if config.origin == "Cost Aware Initial Design":
             initial_x.append(config["x"])
             initial_y.append(config["y"])
         else:
@@ -136,8 +136,8 @@ if __name__ == "__main__":
     # Plot Cost Landscape
     contour = ax1.contourf(xx, yy, cost_grid, levels=20, cmap="viridis")
     fig.colorbar(contour, ax=ax1, label="Cost")
-    ax1.scatter(initial_x, initial_y, c="blue", edgecolor="white", s=80, label="Initial Design Points", zorder=2)
-    ax1.scatter(bo_x, bo_y, c="red", marker="X", edgecolor="white", s=80, label="BO Points", zorder=2)
+    ax1.scatter(initial_x, initial_y, c="blue", edgecolor="white", s=80, label="Cost Aware Initial Design Points", zorder=2)
+    #ax1.scatter(bo_x, bo_y, c="red", marker="X", edgecolor="white", s=80, label="BO Points", zorder=2)
     ax1.set_title("Cost Landscape with Evaluated Points")
     ax1.set_xlabel("x")
     ax1.set_ylabel("y")
