@@ -46,11 +46,6 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._candidate_generator = candidate_generator
 
-        """if candidate_generator is None:
-            self._candidate_generator = SobolInitialDesign
-        else:
-            self._candidate_generator = candidate_generator"""
-
     def _select_configurations(self) -> list[Configuration]:
         """
         Generates a set of cost-aware initial configurations following Algorithm 1.
@@ -130,37 +125,38 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                     distances_dict = {}
 
             # Step 5: Inner loop `while size Xcand > 1 do`
-            # Create a copy of the available candidates to prune in this round.
-            pruning_candidates = set(remaining_indices)
-            while len(pruning_candidates) > 1:
+            # Create a copy of the available candidates
+            candidates = set(remaining_indices)
+            while len(candidates) > 1:
                 # Step 6: Remove the most expensive candidate.
-                if len(pruning_candidates) > 1:
-                    most_expensive_idx = max(pruning_candidates, key=lambda i: costs_dict[i])
-                    pruning_candidates.remove(most_expensive_idx)
+                if len(candidates) > 1:
+                    most_expensive_idx = max(candidates, key=lambda i: costs_dict[i])
+                    candidates.remove(most_expensive_idx)
 
-                if len(pruning_candidates) <= 1:
+                if len(candidates) <= 1:
                     break
 
                 # Step 7: Remove the candidate closest to our already-selected points.
                 if distances_dict:
                     # Consider only the candidates still in this round.
-                    filtered_distances = {k: v for k, v in distances_dict.items() if k in pruning_candidates}
+                    filtered_distances = {k: v for k, v in distances_dict.items() if k in candidates}
                     if filtered_distances:
                         # Using a lambda function is more explicit for the type checker.
                         closest_idx = min(filtered_distances, key=lambda k: filtered_distances[k])
-                        pruning_candidates.remove(closest_idx)
+                        candidates.remove(closest_idx)
                     else:
                         # Fallback: if no candidates with distances are left, remove an arbitrary one.
-                        pruning_candidates.pop()
+                        candidates.pop()
                 else:
-                    # If we haven't selected any points yet, just remove an arbitrary candidate.
-                    pruning_candidates.pop()
+                    # If we haven't selected any points yet (1st iteration),
+                    # skip this elimination step.
+                    pass
 
             # Step 8: `end while`
             # The last remaining candidate is our chosen one for this iteration.
-            if pruning_candidates:
+            if candidates:
                 # Step 9: Add remaining point to Xinit and evaluate (predict cost).
-                chosen_idx = next(iter(pruning_candidates))
+                chosen_idx = next(iter(candidates))
                 chosen_config = discretized_space[chosen_idx]
 
                 # Get the predicted cost for the chosen configuration.
