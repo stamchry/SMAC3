@@ -93,7 +93,7 @@ for i in range(grid_res):
 
 # Plot 1: Performance Landscape
 ax1 = fig.add_subplot(2, 2, 1)
-contour_perf = ax1.contourf(xx, yy, np.log(perf_grid + 1e-9), levels=30, cmap="magma")
+contour_perf = ax1.contourf(xx, yy, np.log(perf_grid + 1e-9), levels=30, cmap="viridis")
 fig.colorbar(contour_perf, ax=ax1, label="Log(Rosenbrock Value)")
 ax1.scatter(
     [rosenbrock_optimum[0]], [rosenbrock_optimum[1]],
