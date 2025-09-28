@@ -10,7 +10,6 @@ from ConfigSpace import Configuration, ConfigurationSpace, UniformFloatHyperpara
 from smac.facade.cost_aware_facade import CostAwareFacade
 from smac.facade.hyperparameter_optimization_facade import HyperparameterOptimizationFacade
 from smac.scenario import Scenario
-from smac.model.random_forest.random_forest import RandomForest
 from smac.callback.cost_surrogate_callback import CostSurrogateCallback
 
 # Configure logging

@@ -49,6 +49,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._candidate_generator = candidate_generator
         self._n_bootstrap_points = n_bootstrap_points
+        self._rng = np.random.RandomState(self._scenario.seed)  # Create a RandomState object
 
     def _select_configurations(self) -> list[Configuration]:
         """
@@ -94,7 +95,9 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             available_candidates = list(discretized_space)
 
             n_to_sample = min(self._n_bootstrap_points, len(available_candidates))
-            sample_indices = np.random.choice(len(available_candidates), n_to_sample, replace=False)
+            sample_indices = self._rng.choice(
+                len(available_candidates), n_to_sample, replace=False
+            )  # Use the RandomState object
 
             # Use a list of configs to remove to avoid modifying while iterating
             configs_to_remove_from_pool = []
