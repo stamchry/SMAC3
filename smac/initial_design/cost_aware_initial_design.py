@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import logging
 from collections import OrderedDict
@@ -34,17 +34,21 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         scenario: Scenario,
         cost_model: AbstractModel,
         initial_budget: float,
+        target_function: Callable,
         candidate_pool_size: int = 1000,
         candidate_generator: type[AbstractInitialDesign] = SobolInitialDesign,
+        n_bootstrap_points: int = 1,
         **kwargs: Any,
     ):
         super().__init__(scenario=scenario, n_configs=None, **kwargs)
         self._scenario = scenario
         self._cost_model = cost_model
         self._initial_budget = initial_budget
+        self._target_function = target_function
         self._candidate_pool_size = candidate_pool_size
         self._logger = logging.getLogger(self.__class__.__name__)
         self._candidate_generator = candidate_generator
+        self._n_bootstrap_points = n_bootstrap_points
 
     def _select_configurations(self) -> list[Configuration]:
         """
@@ -81,13 +85,62 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             OrderedDict((tuple(config.get_array()), config) for config in candidate_pool_raw).values()
         )
 
+        # --- Bootstrap phase: Sample random points to train the model ---
+        if self._n_bootstrap_points > 0 and discretized_space:
+            self._logger.info(f"Sampling {self._n_bootstrap_points} random point(s) to bootstrap the cost model.")
+            bootstrap_data_for_training = []
+
+            # Create a mutable list of candidates to sample from
+            available_candidates = list(discretized_space)
+
+            n_to_sample = min(self._n_bootstrap_points, len(available_candidates))
+            sample_indices = np.random.choice(len(available_candidates), n_to_sample, replace=False)
+
+            # Use a list of configs to remove to avoid modifying while iterating
+            configs_to_remove_from_pool = []
+
+            for idx in sorted(sample_indices, reverse=True):
+                bootstrap_config = available_candidates.pop(idx)
+                configs_to_remove_from_pool.append(bootstrap_config)
+
+                # Evaluate the config to get the true cost
+                _, true_cost = self._target_function(bootstrap_config)
+
+                if cumulative_time + true_cost <= self._initial_budget:
+                    cumulative_time += true_cost
+
+                    # Create a new config with the special origin
+                    sampled_config = Configuration(
+                        configuration_space=self._configspace,
+                        values=dict(bootstrap_config),
+                        origin="Sampling",
+                    )
+                    selected_configs.append(sampled_config)
+
+                    bootstrap_array = sampled_config.get_array()
+                    selected_arrays.append(bootstrap_array)
+                    bootstrap_data_for_training.append((bootstrap_array, np.array([true_cost])))
+                else:
+                    self._logger.warning("Budget exhausted during bootstrap sampling.")
+                    break
+
+            # Remove the sampled configs from the main discretized space
+            discretized_space = [c for c in discretized_space if c not in configs_to_remove_from_pool]
+
+            # Train the model on the collected bootstrap points
+            if bootstrap_data_for_training:
+                X_train, Y_train = zip(*bootstrap_data_for_training)
+                self._cost_model.train(np.array(X_train), np.array(Y_train))
+                simulated_history.extend(bootstrap_data_for_training)
+                self._logger.info(f"Bootstrap complete. Budget used: {cumulative_time:.2f}/{self._initial_budget:.2f}")
+
         self._logger.info(
             f"Generated {len(candidate_pool_raw)} candidates, resulting in "
-            f"{len(discretized_space)} unique configurations."
+            f"{len(discretized_space)} unique configurations for cost-aware selection."
         )
 
         if not discretized_space:
-            return []
+            return selected_configs
 
         # To speed things up, convert all configuration objects to numpy arrays at once.
         all_config_arrays = np.array([c.get_array() for c in discretized_space])
@@ -203,11 +256,16 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         # attribute them to this initial design method.
         final_configs = []
         for config in selected_configs:
-            new_config = Configuration(
-                configuration_space=self._configspace,
-                values=dict(config),
-                origin="Cost Aware Initial Design",
-            )
-            final_configs.append(new_config)
+            if config.origin != "Sampling":
+                # This config was selected by the main cost-aware elimination loop
+                new_config = Configuration(
+                    configuration_space=self._configspace,
+                    values=dict(config),
+                    origin="Cost Aware Initial Design",
+                )
+                final_configs.append(new_config)
+            else:
+                # This config already has an origin (e.g., "Sampling"), so we keep it as is.
+                final_configs.append(config)
 
         return final_configs

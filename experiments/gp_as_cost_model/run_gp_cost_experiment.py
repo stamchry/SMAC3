@@ -55,32 +55,16 @@ if __name__ == "__main__":
     cost_model = GaussianProcess(configspace=configspace, kernel=kernel, seed=0)
     cost_surrogate_callback = CostSurrogateCallback(cost_model)
 
-    # 3. Manually train the GP cost model with one point to start
-    first_config = configspace.get_default_configuration()
-    first_performance, first_cost = evaluate_config(first_config)
-    first_config.origin = "Manual First Point"
-    cost_model.train(first_config.get_array().reshape(1, -1), np.array([first_cost]))
-    print(f"Manually trained cost model with one point. Cost: {first_cost:.2f}")
-
     # 4. Initialize and run SMAC
-    total_budget = 20.0
-    remaining_budget = total_budget - first_cost
+    total_budget = 50.0
 
     smac = CostAwareFacade(
         scenario=scenario,
         target_function=evaluate_config,
-        total_resource_budget=remaining_budget,
+        total_resource_budget=total_budget,
         cost_model=cost_model,
         callbacks=[cost_surrogate_callback],
         overwrite=True,
-    )
-
-    smac.runhistory.add(
-        config=first_config,
-        cost=first_performance,
-        time=first_cost,
-        status=StatusType.SUCCESS,  # Use the enum member, not a string
-        seed=scenario.seed,
     )
 
     smac.optimize()

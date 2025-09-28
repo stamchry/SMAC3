@@ -8,10 +8,10 @@ import numpy as np
 from ConfigSpace import Configuration, ConfigurationSpace, UniformFloatHyperparameter
 
 from smac.facade.cost_aware_facade import CostAwareFacade
+from smac.facade.hyperparameter_optimization_facade import HyperparameterOptimizationFacade
 from smac.scenario import Scenario
 from smac.model.random_forest.random_forest import RandomForest
 from smac.callback.cost_surrogate_callback import CostSurrogateCallback
-from smac.runhistory.dataclasses import StatusType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -49,35 +49,19 @@ if __name__ == "__main__":
     )
 
     # 2. Define the Cost Model (Random Forest)
-    cost_model = RandomForest(configspace=configspace, seed=0)
+    cost_model = HyperparameterOptimizationFacade.get_model(scenario=scenario)
     cost_surrogate_callback = CostSurrogateCallback(cost_model)
-
-    # 3. Manually train the RF cost model with one point to start
-    first_config = configspace.get_default_configuration()
-    first_performance, first_cost = evaluate_config(first_config)
-    first_config.origin = "Manual First Point"
-    cost_model.train(first_config.get_array().reshape(1, -1), np.array([[first_cost]]))
-    print(f"Manually trained cost model with one point. Cost: {first_cost:.2f}")
 
     # 4. Initialize and run SMAC
     total_budget = 50.0
-    remaining_budget = total_budget - first_cost
 
     smac = CostAwareFacade(
         scenario=scenario,
         target_function=evaluate_config,
-        total_resource_budget=remaining_budget,
+        total_resource_budget=total_budget,
         cost_model=cost_model,
         callbacks=[cost_surrogate_callback],
         overwrite=True,
-    )
-
-    smac.runhistory.add(
-        config=first_config,
-        cost=first_performance,
-        time=first_cost,
-        status=StatusType.SUCCESS,
-        seed=scenario.seed,
     )
 
     smac.optimize()
