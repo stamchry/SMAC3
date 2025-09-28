@@ -85,6 +85,7 @@ class CostAwareFacade(BlackBoxFacade):
                 scenario=scenario,
                 cost_model=cost_model,
                 initial_budget=initial_design_budget,
+                target_function=target_function,
             )
 
         # Use a local variable for the acquisition function logic

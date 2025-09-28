@@ -78,16 +78,20 @@ if __name__ == "__main__":
     pred_mean_grid = pred_mean.reshape(grid_res, grid_res)
     pred_std_grid = np.sqrt(pred_var.reshape(grid_res, grid_res))
 
-    points = {"manual": {"x": [], "y": []}, "initial": {"x": [], "y": []}, "bo": {"x": [], "y": []}}
+    points = {
+        "sampling": {"x": [], "y": []},
+        "cost_aware_initial": {"x": [], "y": []},
+        "bo": {"x": [], "y": []},
+    }
     for k, v in runhistory.items():
         config = runhistory.get_config(k.config_id)
         origin = config.origin
-        key = "bo"
-        if origin is not None:
-            if "Manual" in origin:
-                key = "manual"
-            elif "Initial" in origin:
-                key = "initial"
+        key = "bo"  # Default
+        if origin == "Sampling":
+            key = "sampling"
+        elif origin == "Cost Aware Initial Design":
+            key = "cost_aware_initial"
+        
         points[key]["x"].append(config["x"])
         points[key]["y"].append(config["y"])
 
@@ -112,11 +116,15 @@ if __name__ == "__main__":
     fig.colorbar(c4, ax=ax4, label="Predicted Std. Dev.")
     ax4.set_title("Learned Cost Model (RF Uncertainty)")
 
+    # Define the true optimum of the performance function
+    optimum_x, optimum_y = -2, -1
+
     for ax in axes.flatten():
-        ax.scatter(points["manual"]["x"], points["manual"]["y"], color=palette[2], marker="P", s=150, ec="k", label="Manual Start", zorder=3)
-        ax.scatter(points["initial"]["x"], points["initial"]["y"], color=palette[0], s=80, ec="k", label="Initial Design", zorder=2)
+        ax.scatter(points["sampling"]["x"], points["sampling"]["y"], color=palette[1], marker='D', s=80, ec="k", label="Bootstrap", zorder=3)
+        ax.scatter(points["cost_aware_initial"]["x"], points["cost_aware_initial"]["y"], color=palette[0], s=80, ec="k", label="Initial Design", zorder=2)
         ax.scatter(points["bo"]["x"], points["bo"]["y"], color=palette[3], marker="X", s=100, ec="k", label="BO Points", zorder=2)
-        ax.set_xlabel("x"), ax.set_ylabel("y"), ax.legend(), ax.grid(True, alpha=0.5)
+        ax.scatter(optimum_x, optimum_y, marker='*', color='gold', s=200, ec='black', label='Perf. Optimum', zorder=4)
+        ax.set_xlabel("x"), ax.set_ylabel("y"), ax.legend(loc = "upper right", framealpha=0.5), ax.grid(True, alpha=0.5)
 
     # Use tight_layout with padding arguments for better control
     plt.tight_layout(pad=3.0, h_pad=4.0)
@@ -124,5 +132,5 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(__file__)
     output_dir = os.path.join(script_dir, "experiment_figures")
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, "rf_cost_model_results.svg"))
+    plt.savefig(os.path.join(output_dir, "rf_cost_model_results.pdf"))
     plt.show()
