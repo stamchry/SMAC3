@@ -215,28 +215,28 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                 chosen_idx = next(iter(candidates))
                 chosen_config = discretized_space[chosen_idx]
 
-                # Get the predicted cost for the chosen configuration.
-                chosen_array = all_config_arrays[chosen_idx]
-                cost_pred, _ = self._cost_model.predict(chosen_array.reshape(1, -1))
-                simulated_cost = float(cost_pred[0])
+                # --- FIX: Evaluate the TRUE cost, not the simulated one ---
+                # The simulated cost was only for budget estimation. Now we get the real cost
+                # to properly train the model for the next iteration.
+                _, true_cost = self._target_function(chosen_config)
 
                 # Stop if adding this configuration would exceed our budget.
-                if cumulative_time + simulated_cost > self._initial_budget and selected_configs:
-                    self._logger.info(f"Next configuration cost ({simulated_cost:.2f}) would exceed budget. Stopping.")
+                if cumulative_time + true_cost > self._initial_budget and selected_configs:
+                    self._logger.info(f"Next configuration cost ({true_cost:.2f}) would exceed budget. Stopping.")
                     break
 
                 # Add the chosen configuration to our initial design.
                 selected_configs.append(chosen_config)
-                selected_arrays.append(chosen_array)
+                selected_arrays.append(chosen_config.get_array())
 
                 # Permanently remove the chosen configuration from the pool of candidates.
                 remaining_indices.remove(chosen_idx)
 
                 # Step 10: Update ct, cost surrogate.
-                cumulative_time += simulated_cost
+                cumulative_time += true_cost
 
-                # Add the new data point to our history for retraining.
-                simulated_history.append((chosen_array, np.array([simulated_cost])))
+                # Add the new data point (with its TRUE cost) to our history for retraining.
+                simulated_history.append((chosen_config.get_array(), np.array([true_cost])))
 
                 # Retrain the cost model with the new data point after each selection.
                 if len(simulated_history) >= 2:
