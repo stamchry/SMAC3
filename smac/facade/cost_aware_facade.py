@@ -91,10 +91,21 @@ class CostAwareFacade(BlackBoxFacade):
         # Use a local variable for the acquisition function logic
         acq_function = acquisition_function
 
-        # Create and add the cost surrogate callback
-        cost_surrogate_callback = CostSurrogateCallback(cost_model=cost_model)
+        # Check if a CostSurrogateCallback was already provided by the user.
+        # If not, create a default one.
         callbacks = kwargs.get("callbacks", [])
-        callbacks.append(cost_surrogate_callback)
+        cost_surrogate_callback = None
+        for cb in callbacks:
+            if isinstance(cb, CostSurrogateCallback):
+                cost_surrogate_callback = cb
+                self._logger.debug("Using user-provided CostSurrogateCallback.")
+                break
+
+        if cost_surrogate_callback is None:
+            self._logger.debug("No CostSurrogateCallback found, creating a default one.")
+            cost_surrogate_callback = CostSurrogateCallback(cost_model=cost_model, scenario=scenario)
+            callbacks.append(cost_surrogate_callback)
+
         kwargs["callbacks"] = callbacks
 
         if acq_function is None:

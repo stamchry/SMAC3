@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     # Plot 3: Learned Cost Landscape (GP Mean)
     c3 = ax3.contourf(xx, yy, pred_mean_grid, levels=20, cmap="viridis")
-    fig.colorbar(c3, ax=ax3, label="Predicted Mean Cost")
+    fig.colorbar(c3, ax=ax3, label="Predicted Mean Log-Scaled Cost")
     ax3.set_title("Learned Cost Model (GP Mean)")
 
     # Plot 4: Learned Cost Uncertainty (GP Std Dev)
