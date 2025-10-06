@@ -49,7 +49,6 @@ if __name__ == "__main__":
 
     # 2. Define the Cost Model (Random Forest)
     cost_model = HyperparameterOptimizationFacade.get_model(scenario=scenario)
-    cost_surrogate_callback = CostSurrogateCallback(cost_model)
 
     # 4. Initialize and run SMAC
     total_budget = 50.0
@@ -59,7 +58,6 @@ if __name__ == "__main__":
         target_function=evaluate_config,
         total_resource_budget=total_budget,
         cost_model=cost_model,
-        callbacks=[cost_surrogate_callback],
         overwrite=True,
     )
 

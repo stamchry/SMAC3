@@ -109,7 +109,7 @@ if __name__ == "__main__":
     ax2.set_title("Ground Truth Cost")
 
     c3 = ax3.contourf(xx, yy, pred_mean_grid, levels=20, cmap="viridis")
-    fig.colorbar(c3, ax=ax3, label="Predicted Mean Cost")
+    fig.colorbar(c3, ax=ax3, label="Predicted Mean Log-Scaled Cost")
     ax3.set_title("Learned Cost Model (RF Mean)")
 
     c4 = ax4.contourf(xx, yy, pred_std_grid, levels=20, cmap="cividis")

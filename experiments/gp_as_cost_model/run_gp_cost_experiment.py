@@ -8,11 +8,8 @@ import numpy as np
 from ConfigSpace import Configuration, ConfigurationSpace, UniformFloatHyperparameter
 
 from smac.facade.cost_aware_facade import CostAwareFacade
+from smac.facade.blackbox_facade import BlackBoxFacade
 from smac.scenario import Scenario
-from smac.model.gaussian_process.gaussian_process import GaussianProcess
-from smac.model.gaussian_process.kernels import MaternKernel, WhiteKernel, ConstantKernel
-from smac.callback.cost_surrogate_callback import CostSurrogateCallback
-from smac.runhistory.dataclasses import StatusType  # Import StatusType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -50,12 +47,9 @@ if __name__ == "__main__":
     )
 
     # 2. Define the Cost Model (Gaussian Process)
-    n_dims = len(configspace)
-    kernel = ConstantKernel(2.0) * MaternKernel(np.ones([n_dims]), nu=2.5) + WhiteKernel(noise_level=1e-3)
-    cost_model = GaussianProcess(configspace=configspace, kernel=kernel, seed=0)
-    cost_surrogate_callback = CostSurrogateCallback(cost_model)
+    cost_model = BlackBoxFacade.get_model(scenario=scenario)
 
-    # 4. Initialize and run SMAC
+    # 3. Initialize and run SMAC
     total_budget = 50.0
 
     smac = CostAwareFacade(
@@ -63,7 +57,6 @@ if __name__ == "__main__":
         target_function=evaluate_config,
         total_resource_budget=total_budget,
         cost_model=cost_model,
-        callbacks=[cost_surrogate_callback],
         overwrite=True,
     )
 
