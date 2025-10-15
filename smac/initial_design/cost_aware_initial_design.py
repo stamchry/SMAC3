@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Iterator
 
 import logging
 from collections import OrderedDict
@@ -34,7 +34,6 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         scenario: Scenario,
         cost_model: AbstractModel,
         initial_budget: float,
-        target_function: Callable,
         candidate_pool_size: int = 1000,
         candidate_generator: type[AbstractInitialDesign] = SobolInitialDesign,
         n_bootstrap_points: int = 1,
@@ -44,34 +43,31 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         self._scenario = scenario
         self._cost_model = cost_model
         self._initial_budget = initial_budget
-        self._target_function = target_function
         self._candidate_pool_size = candidate_pool_size
         self._logger = logging.getLogger(self.__class__.__name__)
         self._candidate_generator = candidate_generator
         self._n_bootstrap_points = n_bootstrap_points
         self._rng = np.random.RandomState(self._scenario.seed)  # Create a RandomState object
 
-    def _select_configurations(self) -> list[Configuration]:
+    def _select_configurations(self) -> Iterator[Configuration]:  # type: ignore
         """
         Generates a set of cost-aware initial configurations following Algorithm 1.
+        This method is a generator, yielding one configuration at a time.
 
-        This method contains the main logic:
-        1.  (Step 2) Initializes cumulative time and the list for the initial design.
-        2.  (Step 3) A large pool of random candidate configurations is sampled.
-        3.  (Step 4) It then loops until the initial budget is spent:
-            a. (Step 5) An elimination process begins on the set of available candidates.
-               This process repeatedly removes the most expensive candidate and
-               the candidate closest to the already-selected design points.
-            b. The single remaining candidate is chosen for the initial design.
-            c. (Step 10) The cost of this new configuration is added to the total, and the
-               cost model is retrained with the new information.
-        4.  (Step 12) The final list of chosen configurations is returned.
+        The main logic:
+        1.  Initializes cumulative time and the list for the initial design.
+        2.  A large pool of random candidate configurations is sampled.
+        3.  It then loops until the initial budget is spent:
+            a. An elimination process begins on the set of available candidates.
+               This process repeatedly removes the most expensive candidate (based on model prediction)
+               and the candidate closest to the already-selected design points.
+            b. The single remaining candidate is chosen and yielded.
+            c. The predicted cost of this new configuration is added to the total. The cost model
+               is expected to be retrained externally after evaluation.
         """
         # Step 2: Initialize cumulative time (ct) and initial design (Xinit).
         cumulative_time = 0.0
-        selected_configs: list[Configuration] = []
         selected_arrays: list[np.ndarray] = []
-        simulated_history: list[tuple[np.ndarray, np.ndarray]] = []
 
         # Step 3: Discretize Ω into ˜Ω using the specified candidate generator.
         generator = self._candidate_generator(
@@ -81,61 +77,29 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         )
         candidate_pool_raw = generator.select_configurations()
 
-        # Use OrderedDict to efficiently find and keep only the unique configurations.
         discretized_space = list(
             OrderedDict((tuple(config.get_array()), config) for config in candidate_pool_raw).values()
         )
 
-        # --- Bootstrap phase: Sample random points to train the model ---
+        # --- Bootstrap phase: Yield random points to train the model ---
         if self._n_bootstrap_points > 0 and discretized_space:
-            self._logger.info(f"Sampling {self._n_bootstrap_points} random point(s) to bootstrap the cost model.")
-            bootstrap_data_for_training = []
-
-            # Create a mutable list of candidates to sample from
+            self._logger.info(f"Yielding {self._n_bootstrap_points} random point(s) to bootstrap the cost model.")
             available_candidates = list(discretized_space)
-
             n_to_sample = min(self._n_bootstrap_points, len(available_candidates))
-            sample_indices = self._rng.choice(
-                len(available_candidates), n_to_sample, replace=False
-            )  # Use the RandomState object
+            sample_indices = self._rng.choice(len(available_candidates), n_to_sample, replace=False)
 
-            # Use a list of configs to remove to avoid modifying while iterating
-            configs_to_remove_from_pool = []
+            configs_to_remove_from_pool_indices = sorted(sample_indices, reverse=True)
 
-            for idx in sorted(sample_indices, reverse=True):
-                bootstrap_config = available_candidates.pop(idx)
-                configs_to_remove_from_pool.append(bootstrap_config)
-
-                # Evaluate the config to get the true cost
-                _, true_cost = self._target_function(bootstrap_config)
-
-                if cumulative_time + true_cost <= self._initial_budget:
-                    cumulative_time += true_cost
-
-                    # Create a new config with the special origin
-                    sampled_config = Configuration(
-                        configuration_space=self._configspace,
-                        values=dict(bootstrap_config),
-                        origin="Sampling",
-                    )
-                    selected_configs.append(sampled_config)
-
-                    bootstrap_array = sampled_config.get_array()
-                    selected_arrays.append(bootstrap_array)
-                    bootstrap_data_for_training.append((bootstrap_array, np.array([true_cost])))
-                else:
-                    self._logger.warning("Budget exhausted during bootstrap sampling.")
-                    break
+            for idx in configs_to_remove_from_pool_indices:
+                bootstrap_config = available_candidates[idx]
+                bootstrap_config.origin = "Sampling"
+                selected_arrays.append(bootstrap_config.get_array())
+                yield bootstrap_config
 
             # Remove the sampled configs from the main discretized space
-            discretized_space = [c for c in discretized_space if c not in configs_to_remove_from_pool]
-
-            # Train the model on the collected bootstrap points
-            if bootstrap_data_for_training:
-                X_train, Y_train = zip(*bootstrap_data_for_training)
-                self._cost_model.train(np.array(X_train), np.array(Y_train))
-                simulated_history.extend(bootstrap_data_for_training)
-                self._logger.info(f"Bootstrap complete. Budget used: {cumulative_time:.2f}/{self._initial_budget:.2f}")
+            # Create a set of arrays to remove for efficient lookup
+            arrays_to_remove = {tuple(discretized_space[i].get_array()) for i in sample_indices}
+            discretized_space = [c for c in discretized_space if tuple(c.get_array()) not in arrays_to_remove]
 
         self._logger.info(
             f"Generated {len(candidate_pool_raw)} candidates, resulting in "
@@ -143,12 +107,9 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         )
 
         if not discretized_space:
-            return selected_configs
+            return
 
-        # To speed things up, convert all configuration objects to numpy arrays at once.
         all_config_arrays = np.array([c.get_array() for c in discretized_space])
-
-        # We'll use a set of indices to efficiently track which candidates are still available.
         remaining_indices = set(range(len(discretized_space)))
 
         # Step 4: Main loop `while ct < τinit do`
@@ -156,22 +117,18 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         while cumulative_time < self._initial_budget and remaining_indices:
             iteration += 1
 
-            if iteration % 10 == 0:  # Log progress periodically.
+            if iteration % 10 == 0:
                 self._logger.info(
-                    f"Iteration {iteration}: Budget used {cumulative_time:.1f}/{self._initial_budget:.1f}, "
+                    f"Iteration {iteration}: Budget used (estimated) {cumulative_time:.1f}/{self._initial_budget:.1f}, "
                     f"Candidates remaining: {len(remaining_indices)}"
                 )
 
-            # --- Candidate Elimination Process ---
-
-            # Before starting, predict the cost for all currently available candidates.
             if len(remaining_indices) > 1:
                 current_indices_list = list(remaining_indices)
                 current_arrays = all_config_arrays[current_indices_list]
                 current_costs, _ = self._cost_model.predict(current_arrays)
                 costs_dict = dict(zip(current_indices_list, current_costs.flatten()))
 
-                # Also, calculate how close each candidate is to the configurations we've already selected.
                 if selected_arrays:
                     selected_matrix = np.array(selected_arrays)
                     distances = cdist(current_arrays, selected_matrix)
@@ -179,9 +136,20 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                     distances_dict = dict(zip(current_indices_list, min_distances))
                 else:
                     distances_dict = {}
+            else:
+                # If only one candidate is left, we select it directly
+                chosen_idx = next(iter(remaining_indices))
+                chosen_config = discretized_space[chosen_idx]
+                predicted_cost, _ = self._cost_model.predict(chosen_config.get_array().reshape(1, -1))
+                if cumulative_time + predicted_cost[0][0] > self._initial_budget and iteration > 1:
+                    self._logger.info("Next configuration cost would exceed budget. Stopping.")
+                    break
+
+                chosen_config.origin = "Cost Aware Initial Design"
+                yield chosen_config
+                break  # End of initial design
 
             # Step 5: Inner loop `while size Xcand > 1 do`
-            # Create a copy of the available candidates
             candidates = set(remaining_indices)
             while len(candidates) > 1:
                 # Step 6: Remove the most expensive candidate.
@@ -194,81 +162,36 @@ class CostAwareInitialDesign(AbstractInitialDesign):
 
                 # Step 7: Remove the candidate closest to our already-selected points.
                 if distances_dict:
-                    # Consider only the candidates still in this round.
                     filtered_distances = {k: v for k, v in distances_dict.items() if k in candidates}
                     if filtered_distances:
-                        # Using a lambda function is more explicit for the type checker.
                         closest_idx = min(filtered_distances, key=lambda k: filtered_distances[k])
                         candidates.remove(closest_idx)
                     else:
-                        # Fallback: if no candidates with distances are left, remove an arbitrary one.
                         candidates.pop()
                 else:
-                    # If we haven't selected any points yet (1st iteration),
-                    # skip this elimination step.
-                    pass
+                    pass  # First iteration, no selected points yet
 
             # Step 8: `end while`
-            # The last remaining candidate is our chosen one for this iteration.
             if candidates:
-                # Step 9: Add remaining point to Xinit and evaluate (predict cost).
                 chosen_idx = next(iter(candidates))
                 chosen_config = discretized_space[chosen_idx]
+                predicted_cost = costs_dict.get(chosen_idx, 0)
 
-                # --- FIX: Evaluate the TRUE cost, not the simulated one ---
-                # The simulated cost was only for budget estimation. Now we get the real cost
-                # to properly train the model for the next iteration.
-                _, true_cost = self._target_function(chosen_config)
-
-                # Stop if adding this configuration would exceed our budget.
-                if cumulative_time + true_cost > self._initial_budget and selected_configs:
-                    self._logger.info(f"Next configuration cost ({true_cost:.2f}) would exceed budget. Stopping.")
+                if cumulative_time + predicted_cost > self._initial_budget and iteration > 1:
+                    self._logger.info(f"Next configuration cost ({predicted_cost:.2f}) would exceed budget. Stopping.")
                     break
 
-                # Add the chosen configuration to our initial design.
-                selected_configs.append(chosen_config)
+                cumulative_time += predicted_cost
                 selected_arrays.append(chosen_config.get_array())
-
-                # Permanently remove the chosen configuration from the pool of candidates.
                 remaining_indices.remove(chosen_idx)
 
-                # Step 10: Update ct, cost surrogate.
-                cumulative_time += true_cost
-
-                # Add the new data point (with its TRUE cost) to our history for retraining.
-                simulated_history.append((chosen_config.get_array(), np.array([true_cost])))
-
-                # Retrain the cost model with the new data point after each selection.
-                if len(simulated_history) >= 2:
-                    X_hist, Y_hist = zip(*simulated_history)
-                    self._cost_model.train(np.array(X_hist), np.array(Y_hist))
-
+                chosen_config.origin = "Cost Aware Initial Design"
+                yield chosen_config
             else:
                 self._logger.warning("No candidates left after elimination process. Stopping.")
                 break
 
-        # Step 11: `end while`
-        self._initial_budget_spent = cumulative_time
         self._logger.info(
-            f"Cost-aware initial design finished. Selected {len(selected_configs)} configurations "
-            f"with a total cost of {cumulative_time:.2f}/{self._initial_budget:.2f}."
+            "Cost-aware initial design finished."
+            f"Estimated total cost: {cumulative_time:.2f}/{self._initial_budget:.2f}."
         )
-
-        # Step 12: Return Xinit.
-        # Before returning, we reset the origin of the selected configurations to correctly
-        # attribute them to this initial design method.
-        final_configs = []
-        for config in selected_configs:
-            if config.origin != "Sampling":
-                # This config was selected by the main cost-aware elimination loop
-                new_config = Configuration(
-                    configuration_space=self._configspace,
-                    values=dict(config),
-                    origin="Cost Aware Initial Design",
-                )
-                final_configs.append(new_config)
-            else:
-                # This config already has an origin (e.g., "Sampling"), so we keep it as is.
-                final_configs.append(config)
-
-        return final_configs
