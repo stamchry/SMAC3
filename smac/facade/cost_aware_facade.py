@@ -14,7 +14,6 @@ from smac.acquisition.function.expected_improvement import EI
 from smac.callback.cost_surrogate_callback import CostSurrogateCallback
 from smac.facade.blackbox_facade import BlackBoxFacade
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
-from smac.initial_design.cost_aware_initial_design import CostAwareInitialDesign
 from smac.model import AbstractModel
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 from smac.runhistory.dataclasses import TrialInfo, TrialValue
@@ -80,12 +79,13 @@ class CostAwareFacade(BlackBoxFacade):
         # --- Default Component Creation ---
         assert cost_model is not None  # For mypy
         if initial_design is None:
+            from smac.initial_design.cost_aware_initial_design import (
+                CostAwareInitialDesign,
+            )
+
             initial_design_budget = total_resource_budget * initial_design_budget_ratio
             initial_design = CostAwareInitialDesign(
-                scenario=scenario,
-                cost_model=cost_model,
-                initial_budget=initial_design_budget,
-                target_function=target_function,
+                scenario=scenario, cost_model=cost_model, initial_budget=initial_design_budget
             )
 
         # Use a local variable for the acquisition function logic
@@ -125,6 +125,8 @@ class CostAwareFacade(BlackBoxFacade):
 
     def optimize(self, *, data_to_scatter: Optional[Dict[str, Any]] = None) -> Union[Any, List[Any]]:
         """Optimizes the target function within the given total resource budget."""
+        from smac.initial_design.cost_aware_initial_design import CostAwareInitialDesign
+
         cumulative_cost = 0.0
         initial_design_budget = 0.0
 
