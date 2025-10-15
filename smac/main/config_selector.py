@@ -54,9 +54,8 @@ class ConfigSelector:
         retries: int = 16,
         min_trials: int = 1,
     ) -> None:
-        # Those are the configs sampled from the passed initial design
-        # Selecting configurations from initial design
-        self._initial_design_configs: list[Configuration] = []
+        # This will now be an iterator for designs like CostAwareInitialDesign
+        self._initial_design_iterator: Iterator[Configuration] | None = None
 
         # Set classes globally
         self._scenario = scenario
@@ -101,9 +100,9 @@ class ConfigSelector:
         self._random_design = random_design
         self._callbacks = callbacks if callbacks is not None else []
 
-        self._initial_design_configs = initial_design.select_configurations()
-        if len(self._initial_design_configs) == 0:
-            raise RuntimeError("SMAC needs initial configurations to work.")
+        # We call the protected method directly to get the iterator
+        # without it being converted to a list by the base class.
+        self._initial_design_iterator = iter(initial_design._select_configurations())
 
     @property
     def meta(self) -> dict[str, Any]:
@@ -149,8 +148,8 @@ class ConfigSelector:
         logger.debug("Search for the next configuration...")
         self._call_callbacks_on_start()
 
-        # First: We return the initial configurations
-        for config in self._initial_design_configs:
+        # First: We return the initial configurations from the iterator
+        for config in self._initial_design_iterator:  # type: ignore
             if config not in self._processed_configs:
                 self._processed_configs.append(config)
                 self._call_callbacks_on_end(config)
