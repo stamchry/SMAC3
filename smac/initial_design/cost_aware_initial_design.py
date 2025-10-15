@@ -49,8 +49,8 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         self._n_bootstrap_points = n_bootstrap_points
         self._rng = np.random.RandomState(self._scenario.seed)  # Create a RandomState object
 
-    def _select_configurations(self) -> list[Configuration]:
-        return list(self._inner_select_configurations())
+    def _select_configurations(self) -> Iterator[Configuration]:  # type: ignore
+        return iter(self._inner_select_configurations())
 
     def _inner_select_configurations(self) -> Iterator[Configuration]:
         """
