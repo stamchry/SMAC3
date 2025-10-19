@@ -12,6 +12,7 @@ from scipy.spatial.distance import cdist
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.initial_design.sobol_design import SobolInitialDesign
 from smac.model.abstract_model import AbstractModel
+from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
 
 
@@ -34,6 +35,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         scenario: Scenario,
         cost_model: AbstractModel,
         initial_budget: float,
+        runhistory: RunHistory | None = None,
         candidate_pool_size: int = 1000,
         candidate_generator: type[AbstractInitialDesign] = SobolInitialDesign,
         n_bootstrap_points: int = 1,
@@ -48,6 +50,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         self._candidate_generator = candidate_generator
         self._n_bootstrap_points = n_bootstrap_points
         self._rng = np.random.RandomState(self._scenario.seed)  # Create a RandomState object
+        self._runhistory = runhistory
 
     def _select_configurations(self):  # type: ignore
         pass
@@ -68,8 +71,25 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             c. The predicted cost of this new configuration is added to the total. The cost model
                is expected to be retrained externally after evaluation.
         """
-        # Step 2: Initialize cumulative time (ct) and initial design (Xinit).
-        cumulative_time = 0.0
+
+        def get_initial_design_cost() -> float:
+            """Calculates the true cost of the initial design from the runhistory."""
+            if self._runhistory is None:
+                return 0.0
+
+            initial_design_origins = {"Sampling", "Cost Aware Initial Design"}
+            cost = 0.0
+
+            # Iterate over all trials in the runhistory directly for better performance
+            for key, value in self._runhistory.items():
+                # Get the configuration associated with this trial
+                config = self._runhistory.get_config(key.config_id)
+
+                if config.origin in initial_design_origins:
+                    # In a cost-aware context, the `time` field of TrialValue holds the cost
+                    cost += value.time
+            return cost
+
         selected_arrays: list[np.ndarray] = []
 
         # Step 3: Discretize Ω into ˜Ω using the specified candidate generator.
@@ -117,14 +137,20 @@ class CostAwareInitialDesign(AbstractInitialDesign):
 
         # Step 4: Main loop `while ct < τinit do`
         iteration = 0
-        while cumulative_time < self._initial_budget and remaining_indices:
-            iteration += 1
-
-            if iteration % 10 == 0:
+        while remaining_indices:
+            cumulative_time = get_initial_design_cost()
+            if cumulative_time >= self._initial_budget:
                 self._logger.info(
-                    f"Iteration {iteration}: Budget used (estimated) {cumulative_time:.1f}/{self._initial_budget:.1f}, "
-                    f"Candidates remaining: {len(remaining_indices)}"
+                    f"Initial design budget of {self._initial_budget:.2f} reached or exceeded. "
+                    f"Actual cost: {cumulative_time:.2f}. Stopping."
                 )
+                break
+
+            iteration += 1
+            self._logger.info(
+                f"Iteration {iteration}: Budget used {cumulative_time:.2f}/{self._initial_budget:.2f}, "
+                f"Candidates remaining: {len(remaining_indices)}"
+            )
 
             if len(remaining_indices) > 1:
                 current_indices_list = list(remaining_indices)
@@ -143,10 +169,6 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                 # If only one candidate is left, we select it directly
                 chosen_idx = next(iter(remaining_indices))
                 chosen_config = discretized_space[chosen_idx]
-                predicted_cost, _ = self._cost_model.predict(chosen_config.get_array().reshape(1, -1))
-                if cumulative_time + predicted_cost[0][0] > self._initial_budget and iteration > 1:
-                    self._logger.info("Next configuration cost would exceed budget. Stopping.")
-                    break
 
                 chosen_config.origin = "Cost Aware Initial Design"
                 yield chosen_config
@@ -178,13 +200,6 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             if candidates:
                 chosen_idx = next(iter(candidates))
                 chosen_config = discretized_space[chosen_idx]
-                predicted_cost = costs_dict.get(chosen_idx, 0)
-
-                if cumulative_time + predicted_cost > self._initial_budget and iteration > 1:
-                    self._logger.info(f"Next configuration cost ({predicted_cost:.2f}) would exceed budget. Stopping.")
-                    break
-
-                cumulative_time += predicted_cost
                 selected_arrays.append(chosen_config.get_array())
                 remaining_indices.remove(chosen_idx)
 
@@ -194,7 +209,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                 self._logger.warning("No candidates left after elimination process. Stopping.")
                 break
 
+        final_cost = get_initial_design_cost()
         self._logger.info(
-            "Cost-aware initial design finished."
-            f"Estimated total cost: {cumulative_time:.2f}/{self._initial_budget:.2f}."
+            "Cost-aware initial design finished." f"Final actual cost: {final_cost:.2f}/{self._initial_budget:.2f}."
         )

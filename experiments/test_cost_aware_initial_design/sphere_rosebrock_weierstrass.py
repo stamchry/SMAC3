@@ -12,7 +12,7 @@ from ConfigSpace import Configuration, ConfigurationSpace, UniformFloatHyperpara
 from smac.facade.blackbox_facade import BlackBoxFacade
 from smac.initial_design.cost_aware_initial_design import CostAwareInitialDesign
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
-from smac.runhistory.dataclasses import TrialValue
+from smac.runhistory.dataclasses import TrialValue, TrialInfo
 from smac.scenario import Scenario
 
 # Configure logging and plot style
@@ -68,21 +68,26 @@ def run_ioh_experiment(problem_id: int, total_budget: float):
     # 4. Set up Cost-Aware Components
     cost_formula = lambda config: evaluate_config(config)[1]
     cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
+    
+    # We need a runhistory to track the costs
+    from smac.runhistory.runhistory import RunHistory
+    runhistory = RunHistory()
+
     initial_design = CostAwareInitialDesign(
         scenario=scenario,
         cost_model=cost_model,
         initial_budget=total_budget,
+        runhistory=runhistory,
     )
 
     # 5. Initialize SMAC with BlackBoxFacade
     smac = BlackBoxFacade(
         scenario=scenario,
-        target_function=evaluate_config,
         initial_design=initial_design,
+        runhistory=runhistory,
         overwrite=True,
     )
 
-    # 6. Run the optimization using a manual ask/tell loop
     print(f"\n--- Testing Cost-Aware Initial Design on {problem_name} ---")
     for i in range(int(total_budget) * 2):  # Loop more times than expected trials
         trial_info = smac.ask()
@@ -91,7 +96,7 @@ def run_ioh_experiment(problem_id: int, total_budget: float):
             print("SMAC has no more configurations to suggest.")
             break
 
-        if "Initial Design" not in trial_info.config.origin:
+        if "Initial Design" not in trial_info.config.origin and "Sampling" not in trial_info.config.origin:
             print("Initial design phase is complete. Stopping.")
             break
 

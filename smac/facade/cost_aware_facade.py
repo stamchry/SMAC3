@@ -17,6 +17,7 @@ from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.model import AbstractModel
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 from smac.runhistory.dataclasses import TrialInfo, TrialValue
+from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
 
 
@@ -43,6 +44,8 @@ class CostAwareFacade(BlackBoxFacade):
         The fraction of `total_resource_budget` to be used for the initial design.
     acquisition_function : AbstractAcquisitionFunction | None, defaults to None
         The acquisition function to use. If None, `CostAwareAcquisitionFunction` wrapping `EI` is used.
+    runhistory : RunHistory | None, defaults to None
+        The runhistory to store the trials. If None, a new runhistory is created.
     overwrite : bool, defaults to False
         If True, the output directory will be overwritten.
     **kwargs:
@@ -76,6 +79,8 @@ class CostAwareFacade(BlackBoxFacade):
         if cost_model is None and cost_formula is not None:
             cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
 
+        runhistory = RunHistory()
+
         # --- Default Component Creation ---
         assert cost_model is not None  # For mypy
         if initial_design is None:
@@ -85,7 +90,10 @@ class CostAwareFacade(BlackBoxFacade):
 
             initial_design_budget = total_resource_budget * initial_design_budget_ratio
             initial_design = CostAwareInitialDesign(
-                scenario=scenario, cost_model=cost_model, initial_budget=initial_design_budget
+                scenario=scenario,
+                cost_model=cost_model,
+                initial_budget=initial_design_budget,
+                runhistory=runhistory,
             )
 
         # Use a local variable for the acquisition function logic
@@ -120,20 +128,14 @@ class CostAwareFacade(BlackBoxFacade):
             initial_design=initial_design,
             acquisition_function=acq_function,
             overwrite=overwrite,
+            runhistory=runhistory,
             **kwargs,
         )
 
     def optimize(self, *, data_to_scatter: Optional[Dict[str, Any]] = None) -> Union[Any, List[Any]]:
         """Optimizes the target function within the given total resource budget."""
-        from smac.initial_design.cost_aware_initial_design import CostAwareInitialDesign
-
         cumulative_cost = 0.0
         initial_design_budget = 0.0
-
-        # Handle initial design budget if it's a CostAwareInitialDesign
-        if isinstance(self._initial_design, CostAwareInitialDesign):
-            initial_design_budget = self._initial_design._initial_budget
-            cumulative_cost += initial_design_budget
 
         self._logger.info("\n--- Starting Budget-Based Optimization Loop ---")
 
