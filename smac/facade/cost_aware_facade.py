@@ -30,8 +30,9 @@ class CostAwareFacade(BlackBoxFacade):
     ----------
     scenario : Scenario
         The scenario object, holding all environmental information.
-    target_function : Callable
-        The target function to optimize. It must return a tuple of (performance, cost).
+    target_function : Callable[Configuration, dict[str, float]]
+        The target function to optimize. It must return a dictionary with two keys:
+        `"performance"` for the performance value to be minimized, and `"cost"` for the resource cost.
     total_resource_budget : float
         The total budget for the optimization in terms of resource/cost.
     cost_model : AbstractModel | None, defaults to None
@@ -154,8 +155,10 @@ class CostAwareFacade(BlackBoxFacade):
                 self._logger.info("SMAC has no more configurations to suggest. Stopping.")
                 break
 
-            # The target function for cost-aware optimization returns (cost, time)
-            performance, cost = self.target_function(trial_info.config)
+            # The target function for cost-aware optimization returns a dictionary
+            # with keys "performance" and "cost".
+            result = self.target_function(trial_info.config)
+            performance, cost = result["performance"], result["cost"]
 
             if cumulative_cost + cost > self._total_resource_budget:
                 self._logger.info(f"Evaluation cost ({cost:.2f}) would exceed total budget. Stopping.")

@@ -19,7 +19,7 @@ from smac.scenario import Scenario
 logging.basicConfig(level=logging.INFO)
 
 
-def evaluate_config(config: Configuration) -> tuple[float, float]:
+def evaluate_config(config: Configuration) -> dict[str, float]:
     """
     A 2D target function where cost and performance are non-trivial.
     - Performance is a simple quadratic function.
@@ -40,7 +40,7 @@ def evaluate_config(config: Configuration) -> tuple[float, float]:
     # Normalize cost to be in a reasonable range (e.g., [0.1, 1.1])
     cost = (cost_unnormalized + 1) / 2 + 0.1
 
-    return performance_loss, cost
+    return {"performance": performance_loss, "cost": cost}
 
 
 if __name__ == "__main__":
@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     # 2. --- Budget Definition ---
     total_resource_budget = 50.0
-    initial_design_budget = total_resource_budget / 8
+    initial_design_budget = 0
 
     # 3. Define the Scenario
     scenario = Scenario(
@@ -64,9 +64,9 @@ if __name__ == "__main__":
     )
 
     # 4. Define the Cost Model and its callback
-    cost_formula = lambda config: evaluate_config(config)[1]
+    cost_formula = lambda config: evaluate_config(config)["cost"]
     cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
-    cost_surrogate_callback = CostSurrogateCallback(cost_model=cost_model)
+    cost_surrogate_callback = CostSurrogateCallback(cost_model=cost_model, scenario=scenario)
 
     # 5. Create the Cost-Aware Initial Design
     initial_design = CostAwareInitialDesign(
@@ -111,7 +111,8 @@ if __name__ == "__main__":
             print("SMAC has no more configurations to suggest. Stopping.")
             break
 
-        performance, cost = evaluate_config(trial_info.config)
+        result = evaluate_config(trial_info.config)
+        performance, cost = result["performance"], result["cost"]
 
         if cumulative_cost + cost > total_resource_budget:
             print(f"Evaluation cost ({cost:.2f}) would exceed total budget. Stopping.")
@@ -134,7 +135,9 @@ if __name__ == "__main__":
     cost_grid = np.zeros_like(xx)
     for i in range(grid_res):
         for j in range(grid_res):
-            perf_grid[i, j], cost_grid[i, j] = evaluate_config(Configuration(configspace, {"x": xx[i, j], "y": yy[i, j]}))
+            result = evaluate_config(Configuration(configspace, {"x": xx[i, j], "y": yy[i, j]}))
+            perf_grid[i, j] = result["performance"]
+            cost_grid[i, j] = result["cost"]
 
     initial_x, initial_y, bo_x, bo_y = [], [], [], []
     for k, v in smac.runhistory.items():

@@ -20,7 +20,7 @@ sns.set_theme(style="whitegrid", font_scale=1.2)
 palette = sns.color_palette("deep")
 
 
-def evaluate_config(config: Configuration) -> tuple[float, float]:
+def evaluate_config(config: Configuration) -> dict[str, float]:
     """Re-definition of the target function for plotting the ground truth."""
     x, y = config["x"], config["y"]
     performance_loss = (x + 2) ** 2 + (y + 1) ** 2
@@ -31,7 +31,7 @@ def evaluate_config(config: Configuration) -> tuple[float, float]:
         - np.exp(-((x + 2) ** 2 + (y - 2) ** 2))
     )
     cost = (cost_unnormalized + 1) / 2 + 0.1
-    return performance_loss, cost
+    return {"performance": performance_loss, "cost": cost}
 
 
 if __name__ == "__main__":
@@ -70,7 +70,9 @@ if __name__ == "__main__":
     for i in range(grid_res):
         for j in range(grid_res):
             config = Configuration(configspace, {"x": xx[i, j], "y": yy[i, j]})
-            perf_grid[i, j], true_cost_grid[i, j] = evaluate_config(config)
+            result = evaluate_config(config)
+            perf_grid[i, j] = result["performance"]
+            true_cost_grid[i, j] = result["cost"]
             grid_configs.append(config)
 
     grid_arrays = np.array([c.get_array() for c in grid_configs])

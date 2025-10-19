@@ -15,7 +15,7 @@ from smac.scenario import Scenario
 logging.basicConfig(level=logging.INFO)
 
 
-def evaluate_config(config: Configuration, seed: int = 0) -> tuple[float, float]:
+def evaluate_config(config: Configuration, seed: int = 0) -> dict[str, float]:
     """
     A 2D target function where cost and performance are non-trivial.
     """
@@ -28,7 +28,7 @@ def evaluate_config(config: Configuration, seed: int = 0) -> tuple[float, float]
         - np.exp(-((x + 2) ** 2 + (y - 2) ** 2))
     )
     cost = (cost_unnormalized + 1) / 2 + 0.1
-    return performance_loss, cost
+    return {"performance": performance_loss, "cost": cost}
 
 
 if __name__ == "__main__":

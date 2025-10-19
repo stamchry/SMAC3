@@ -19,14 +19,14 @@ logging.basicConfig(level=logging.INFO)
 
 
 # 1. Create a primary evaluation function that returns both performance and cost
-def evaluate_config(config: Configuration) -> tuple[float, float]:
+def evaluate_config(config: Configuration) -> dict[str, float]:
     """
     Evaluates a configuration and returns both its performance loss and resource cost.
     """
     x = config["x"]
     resource_cost = 0.1 + abs(x - 3) / 5
     performance_loss = (x - 5) ** 2
-    return performance_loss, resource_cost
+    return {"performance": performance_loss, "cost": resource_cost}
 
 
 if __name__ == "__main__":
@@ -109,7 +109,8 @@ if __name__ == "__main__":
         # -----------------------------------------
 
         # Perform a real evaluation
-        performance, cost = evaluate_config(trial_info.config)
+        result = evaluate_config(trial_info.config)
+        performance, cost = result["performance"], result["cost"]
 
         # Check if this evaluation would exceed the total budget
         if cumulative_cost + cost > total_resource_budget:
@@ -136,7 +137,7 @@ if __name__ == "__main__":
     incumbent = smac.intensifier.get_incumbent()
     if incumbent is not None:
         print(f"Best configuration found: {incumbent}")
-        performance, cost = evaluate_config(incumbent)
+        performance = evaluate_config(incumbent)["performance"]
         print(f"Validated cost: {performance}")
     else:
         print("No incumbent found.")
