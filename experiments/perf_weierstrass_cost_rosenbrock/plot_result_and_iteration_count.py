@@ -67,6 +67,28 @@ random_ei_data, best_configs_rei = load_and_process_data(SCENARIO_RANDOM_EI, con
 if not cost_aware_data or not random_ei_data:
     raise FileNotFoundError("Could not load data for one or both experiments. Please run them first.")
 
+# --- Load Data for a single run for plotting path ---
+single_run_rh_ca = RunHistory()
+single_run_path_ca = os.path.join(f"smac3_output/{SCENARIO_COST_AWARE}", "0", "runhistory.json")
+bootstrap_points, initial_design_points, bo_points = [], [], []
+if os.path.exists(single_run_path_ca):
+    single_run_rh_ca.load(single_run_path_ca, configspace)
+    sorted_single_run_ca = sorted(single_run_rh_ca.items(), key=lambda item: item[1].starttime)
+    
+    for k, v in sorted_single_run_ca:
+        config = single_run_rh_ca.get_config(k.config_id)
+        point = (config["x0"], config["x1"])
+        if config.origin == "Sampling":
+            bootstrap_points.append(point)
+        elif config.origin == "Cost Aware Initial Design":
+            initial_design_points.append(point)
+        else:
+            bo_points.append(point)
+else:
+    print("Warning: Could not find single runhistory for cost-aware variant to plot path.")
+
+
+
 # --- Plotting ---
 fig = plt.figure(figsize=(24, 16))
 
@@ -79,7 +101,7 @@ rosenbrock_optimum = rosenbrock.optimum.x
 
 def evaluate_config(config: Configuration): 
     x = [config["x0"], config["x1"]]
-    return weierstrass(x), rosenbrock(x)
+    return {"performance": weierstrass(x), "cost": rosenbrock(x)}
 
 grid_res = 100
 x_grid, y_grid = np.linspace(-5, 5, grid_res), np.linspace(-5, 5, grid_res)
@@ -87,7 +109,9 @@ xx, yy = np.meshgrid(x_grid, y_grid)
 perf_grid, cost_grid = np.zeros_like(xx), np.zeros_like(xx)
 for i in range(grid_res):
     for j in range(grid_res):
-        perf_grid[i, j], cost_grid[i, j] = evaluate_config(Configuration(configspace, {"x0": xx[i, j], "x1": yy[i, j]}))
+        result = evaluate_config(Configuration(configspace, {"x0": xx[i, j], "x1": yy[i, j]}))
+        perf_grid[i, j] = result["performance"]
+        cost_grid[i, j] = result["cost"]
 
 # Plot 1: Performance Landscape (Weierstrass)
 ax1 = fig.add_subplot(2, 2, 1)
@@ -103,15 +127,34 @@ if best_configs_rei:
     ax1.scatter(best_x_rei, best_y_rei, color=random_ei_color, marker='s', s=100, edgecolor='white', linewidth=1.5, label='Best Found (Random+EI)', zorder=11)
 
 ax1.set_title("Performance Landscape (Weierstrass)"), ax1.set_xlabel("x0"), ax1.set_ylabel("x1")
-ax1.legend(), ax1.grid(True, alpha=0.3)
+legend1 = ax1.legend()
+legend1.set_zorder(20)
+ax1.grid(True, alpha=0.3)
 
 # Plot 2: Cost Landscape (Rosenbrock)
 ax2 = fig.add_subplot(2, 2, 2)
 contour_cost = ax2.contourf(xx, yy, np.log(cost_grid + 1e-9), levels=20, cmap="magma")
 fig.colorbar(contour_cost, ax=ax2, label="Log(Rosenbrock Cost)")
-ax2.scatter([rosenbrock_optimum[0]], [rosenbrock_optimum[1]], marker='*', s=400, color='yellow', edgecolor='black', label='Rosenbrock Minimum (Low Cost)', zorder=15)
-ax2.set_title("Cost Landscape (Rosenbrock)"), ax2.set_xlabel("x0"), ax2.set_ylabel("x1")
-ax2.legend(), ax2.grid(True, alpha=0.3)
+ax2.scatter([rosenbrock_optimum[0]], [rosenbrock_optimum[1]], marker='*', s=400, color='yellow', edgecolor='black', label='Rosenbrock Minimum', zorder=15)
+
+# Plot single run path for cost-aware
+if bootstrap_points:
+    boot_x, boot_y = zip(*bootstrap_points)
+    ax2.scatter(boot_x, boot_y, color=palette[1], marker='D', s=80, ec="k", label="Bootstrap", zorder=11)
+
+if initial_design_points:
+    init_x, init_y = zip(*initial_design_points)
+    ax2.scatter(init_x, init_y, color=palette[0], marker='o', s=80, ec="k", label="Initial Design", zorder=10)
+
+if bo_points:
+    bo_x, bo_y = zip(*bo_points)
+    ax2.scatter(bo_x, bo_y, color=palette[3], marker="X", s=100, ec="k", label="BO Points", zorder=12)
+
+
+ax2.set_title("Cost Landscape (Rosenbrock) for single cost-aware run"), ax2.set_xlabel("x0"), ax2.set_ylabel("x1")
+legend2 = ax2.legend(loc="lower right", framealpha=0.7)
+legend2.set_zorder(20)
+ax2.grid(True, alpha=0.3)
 
 # --- Bottom Row: Combined Cost Plot ---
 ax3 = fig.add_subplot(2, 1, 2)
@@ -129,7 +172,10 @@ ax3.plot(early_phase_rei_indices, median_rei.loc[early_phase_rei_indices], color
 
 ax3.set_title("Comparison of Median Cost per Trial (Rosenbrock Cost)")
 ax3.set_xlabel("Trial Number")
-ax3.set_ylabel("Cost"), ax3.legend(), ax3.grid(True, which="both", alpha=0.5), ax3.set_yscale("log")
+ax3.set_ylabel("Cost")
+legend3 = ax3.legend()
+legend3.set_zorder(20)
+ax3.grid(True, which="both", alpha=0.5), ax3.set_yscale("log")
 
 # --- Finalize and Save ---
 plt.tight_layout(pad=3.0)

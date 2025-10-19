@@ -18,7 +18,7 @@ from smac.intensifier.intensifier import Intensifier
 logging.basicConfig(level=logging.INFO)
 
 
-def evaluate_config(config: Configuration) -> tuple[float, float]:
+def evaluate_config(config: Configuration) -> dict[str, float]:
     """
     A 2D target function where the cost is a complex landscape and the loss is constant.
     This allows us to visualize how the initial design explores the cost surface.
@@ -38,7 +38,7 @@ def evaluate_config(config: Configuration) -> tuple[float, float]:
     # The performance loss is constant, so optimization focuses purely on exploring
     performance_loss = 1.0
 
-    return performance_loss, cost
+    return {"performance": performance_loss, "cost": cost}
 
 
 if __name__ == "__main__":
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     )
 
     # 4. Define the cost formula and create the HandCrafted Cost Model
-    cost_formula = lambda config: evaluate_config(config)[1]
+    cost_formula = lambda config: evaluate_config(config)["cost"]
     cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
 
     # 5. Create the Cost-Aware Initial Design
@@ -89,7 +89,8 @@ if __name__ == "__main__":
             print("SMAC has no more configurations to suggest. Stopping.")
             break
 
-        performance, cost = evaluate_config(trial_info.config)
+        result = evaluate_config(trial_info.config)
+        performance, cost = result["performance"], result["cost"]
 
         if cumulative_cost + cost > total_resource_budget:
             print(f"Evaluation cost ({cost:.2f}) would exceed total budget. Stopping.")
@@ -113,7 +114,7 @@ if __name__ == "__main__":
     cost_grid = np.zeros_like(xx)
     for i in range(grid_res):
         for j in range(grid_res):
-            _, cost_grid[i, j] = evaluate_config(Configuration(configspace, {"x": xx[i, j], "y": yy[i, j]}))
+            cost_grid[i, j] = evaluate_config(Configuration(configspace, {"x": xx[i, j], "y": yy[i, j]}))["cost"]
 
     # Get evaluated points from runhistory
     initial_x, initial_y = [], []

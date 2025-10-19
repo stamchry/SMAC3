@@ -44,12 +44,11 @@ def run_ioh_experiment(problem_id: int, total_budget: float):
 
     # 2. Define the target function for SMAC
     # Performance is constant, cost is the normalized IOH function value.
-    def evaluate_config(config: Configuration, seed: int = 0) -> tuple[float, float]:
+    def evaluate_config(config: Configuration, seed: int = 0) -> dict[str, float]:
         x = [config[f"x{i}"] for i in range(dimension)]
         raw_cost = problem(x)
         normalized_cost = normalize_cost(raw_cost)
-        performance = 1.0
-        return performance, normalized_cost
+        return {"performance": 1.0, "cost": normalized_cost}
 
     # 3. Define the Configuration Space and Scenario
     configspace = ConfigurationSpace(seed=0)
@@ -66,7 +65,7 @@ def run_ioh_experiment(problem_id: int, total_budget: float):
     )
 
     # 4. Set up Cost-Aware Components
-    cost_formula = lambda config: evaluate_config(config)[1]
+    cost_formula = lambda config: evaluate_config(config)["cost"]
     cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
     
     # We need a runhistory to track the costs
@@ -100,7 +99,8 @@ def run_ioh_experiment(problem_id: int, total_budget: float):
             print("Initial design phase is complete. Stopping.")
             break
 
-        performance, cost = evaluate_config(trial_info.config)
+        result = evaluate_config(trial_info.config)
+        performance, cost = result["performance"], result["cost"]
         smac.tell(trial_info, TrialValue(cost=performance, time=cost))
         print(f"Trial {len(smac.runhistory)} (Origin: {trial_info.config.origin}): Cost={cost:.2f}")
 
@@ -124,7 +124,7 @@ def plot_results(smac: BlackBoxFacade, problem_name: str, evaluate_config: calla
     for i in range(grid_res):
         for j in range(grid_res):
             config = Configuration(configspace, {"x0": xx[i, j], "x1": yy[i, j]})
-            _, cost_grid[i, j] = evaluate_config(config)
+            cost_grid[i, j] = evaluate_config(config)["cost"]
 
     # --- FIX: Filter runhistory to only include points from the initial design ---
     initial_design_trials = [

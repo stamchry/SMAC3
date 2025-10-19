@@ -31,7 +31,7 @@ def run_experiment(seed: int):
     # 4. Target Evaluation Function
     def evaluate_config(config: Configuration, seed: int = 0):
         x = [config["x0"], config["x1"]]
-        return rosenbrock(x), weierstrass_cost_func(x)
+        return {"performance": rosenbrock(x), "cost": weierstrass_cost_func(x)}
 
     # 5. SMAC Scenario and Facade
     scenario = Scenario(

@@ -13,7 +13,7 @@ from smac.scenario import Scenario
 logging.basicConfig(level=logging.INFO)
 
 
-def evaluate_config(config: Configuration, seed: int = 0) -> tuple[float, float]:
+def evaluate_config(config: Configuration, seed: int = 0) -> dict[str, float]:
     """
     A 2D target function where cost and performance are non-trivial.
     - Performance is a simple quadratic function.
@@ -22,7 +22,7 @@ def evaluate_config(config: Configuration, seed: int = 0) -> tuple[float, float]
     x, y = config["x"], config["y"]
 
     # Performance is a simple bowl shape, minimum at (-2,-1)
-    performance_loss = (x+2)**2 + (y+1)**2
+    performance = (x+2)**2 + (y+1)**2
 
     # Cost is a function with four peaks/valleys
     cost_unnormalized = (
@@ -34,7 +34,7 @@ def evaluate_config(config: Configuration, seed: int = 0) -> tuple[float, float]
     # Normalize cost to be in a reasonable range (e.g., [0.1, 1.1])
     cost = (cost_unnormalized + 1) / 2 + 0.1
 
-    return performance_loss, cost
+    return {"performance": performance, "cost": cost}
 
 
 if __name__ == "__main__":
@@ -54,14 +54,14 @@ if __name__ == "__main__":
     )
 
     # 3. Define the cost formula
-    cost_formula = lambda config: evaluate_config(config)[1]
+    cost_formula = lambda config: evaluate_config(config)["cost"]
 
     # 4. Initialize SMAC facade
     # The facade will automatically handle the initial design and acquisition function.
     smac = CostAwareFacade(
         scenario=scenario,
         target_function=evaluate_config,
-        total_resource_budget=10.0,
+        total_resource_budget=50.0,
         cost_formula=cost_formula,
         overwrite=True,
     )
@@ -78,7 +78,9 @@ if __name__ == "__main__":
     cost_grid = np.zeros_like(xx)
     for i in range(grid_res):
         for j in range(grid_res):
-            perf_grid[i, j], cost_grid[i, j] = evaluate_config(Configuration(configspace, {"x": xx[i, j], "y": yy[i, j]}))
+            result = evaluate_config(Configuration(configspace, {"x": xx[i, j], "y": yy[i, j]}))
+            perf_grid[i, j] = result["performance"]
+            cost_grid[i, j] = result["cost"]
 
     initial_x, initial_y, bo_x, bo_y = [], [], [], []
     for k, v in smac.runhistory.items():

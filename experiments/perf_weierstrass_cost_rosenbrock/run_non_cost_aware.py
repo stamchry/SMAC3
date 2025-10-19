@@ -43,8 +43,8 @@ def run_experiment(seed: int):
     def evaluate_config(config: Configuration, seed: int = 0):
         x = [config["x0"], config["x1"]]
         performance = weierstrass(x)
-        cost = normalized_rosenbrock_cost(x)  # Use the normalized cost
-        return performance, cost
+        cost = normalized_rosenbrock_cost(x)
+        return {"performance": performance, "cost": cost}
 
     # 5. SMAC Scenario and Facade
     scenario = Scenario(

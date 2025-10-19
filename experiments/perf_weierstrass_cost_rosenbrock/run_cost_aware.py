@@ -42,7 +42,7 @@ def run_experiment(seed: int):
         x = [config["x0"], config["x1"]]
         performance = weierstrass(x)
         cost = normalized_rosenbrock_cost(x)
-        return performance, cost
+        return {"performance": performance, "cost": cost}
 
     # 5. SMAC Scenario and Facade
     scenario = Scenario(
