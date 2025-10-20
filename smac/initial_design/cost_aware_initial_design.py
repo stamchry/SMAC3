@@ -49,7 +49,6 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._candidate_generator = candidate_generator
         self._n_bootstrap_points = n_bootstrap_points
-        self._rng = np.random.RandomState(self._scenario.seed)  # Create a RandomState object
         self._runhistory = runhistory
 
     def _select_configurations(self):  # type: ignore
