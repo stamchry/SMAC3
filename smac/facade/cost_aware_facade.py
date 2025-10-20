@@ -13,6 +13,9 @@ from smac.acquisition.function.cost_aware_acquisition_function import (
 from smac.acquisition.function.expected_improvement import EI
 from smac.callback.cost_surrogate_callback import CostSurrogateCallback
 from smac.facade.blackbox_facade import BlackBoxFacade
+from smac.facade.hyperparameter_optimization_facade import (
+    HyperparameterOptimizationFacade,
+)
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.model import AbstractModel
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
@@ -74,11 +77,12 @@ class CostAwareFacade(BlackBoxFacade):
         if cost_model is not None and cost_formula is not None:
             raise ValueError("Cannot provide both `cost_model` and `cost_formula`.")
 
-        if cost_model is None and cost_formula is None:
-            raise ValueError("Must provide either `cost_model` or `cost_formula` for cost-aware optimization.")
-
-        if cost_model is None and cost_formula is not None:
-            cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
+        if cost_model is None:
+            if cost_formula is not None:
+                cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
+            else:
+                self._logger.info("No cost model or cost formula provided. Using default RandomForest model for cost.")
+                cost_model = HyperparameterOptimizationFacade.get_model(scenario=scenario)
 
         runhistory = RunHistory()
 
