@@ -71,6 +71,7 @@ class CostAwareFacade(BlackBoxFacade):
     ):
         self.target_function = target_function
         self._total_resource_budget = total_resource_budget
+        self._initial_design_budget = initial_design_budget_ratio * total_resource_budget
         self._logger = logging.getLogger(self.__module__ + "." + self.__class__.__name__)
 
         # --- Handle Cost Model ---
@@ -93,11 +94,10 @@ class CostAwareFacade(BlackBoxFacade):
                 CostAwareInitialDesign,
             )
 
-            initial_design_budget = total_resource_budget * initial_design_budget_ratio
             initial_design = CostAwareInitialDesign(
                 scenario=scenario,
                 cost_model=cost_model,
-                initial_budget=initial_design_budget,
+                initial_budget=self._initial_design_budget,
                 runhistory=runhistory,
             )
 
@@ -140,7 +140,7 @@ class CostAwareFacade(BlackBoxFacade):
     def optimize(self, *, data_to_scatter: Optional[Dict[str, Any]] = None) -> Union[Any, List[Any]]:
         """Optimizes the target function within the given total resource budget."""
         cumulative_cost = 0.0
-        initial_design_budget = 0.0
+        initial_design_budget = self._initial_design_budget
 
         self._logger.info("\n--- Starting Budget-Based Optimization Loop ---")
 
