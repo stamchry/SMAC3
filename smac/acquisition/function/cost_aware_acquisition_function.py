@@ -54,14 +54,16 @@ class CostAwareAcquisitionFunction(AbstractAcquisitionFunction):
     @property
     def name(self) -> str:
         """Returns the full name of the acquisition function."""
-        return f"Cost-Aware {self._acquisition_function.name}"
+        return f"{self._acquisition_function.name} (Cost-Aware)"
 
     @property
     def meta(self) -> dict[str, Any]:
         """Returns the meta data of the acquisition function."""
-        meta = super().meta
+        # Start with the meta from the wrapped acquisition function
+        meta = self._acquisition_function.meta.copy()
+        # Update with cost-aware specific information
+        meta.update({"name": self.name})
         meta.update({"alpha": self._alpha})
-        meta.update(self._acquisition_function.meta)
         return meta
 
     def set_budget_info(

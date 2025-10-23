@@ -85,8 +85,8 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                 config = self._runhistory.get_config(key.config_id)
 
                 if config.origin in initial_design_origins:
-                    # In a cost-aware context, the `time` field of TrialValue holds the cost
-                    cost += value.time
+                    # The resource cost is stored in additional_info
+                    cost += value.additional_info.get("resource_cost", 0.0)
             return cost
 
         selected_arrays: list[np.ndarray] = []

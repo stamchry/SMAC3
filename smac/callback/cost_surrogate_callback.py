@@ -58,9 +58,7 @@ class CostSurrogateCallback(Callback):
         This method is called after a real trial is completed. It extracts the cost,
         updates the history, and retrains the cost model with real data.
         """
-        evaluation_cost = value.time
-        if "evaluation_cost" in value.additional_info:
-            evaluation_cost = value.additional_info["evaluation_cost"]
+        evaluation_cost = value.additional_info.get("resource_cost", value.time)
 
         # Add the trial to our dedicated cost runhistory.
         # We put the `evaluation_cost` into the `cost` field so the encoder can process it.
