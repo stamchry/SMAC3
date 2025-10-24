@@ -12,6 +12,7 @@ from scipy.spatial.distance import cdist
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.initial_design.sobol_design import SobolInitialDesign
 from smac.model.abstract_model import AbstractModel
+from smac.runhistory.dataclasses import TrialKey
 from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
 
@@ -76,17 +77,30 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             if self._runhistory is None:
                 return 0.0
 
-            initial_design_origins = {"Sampling", "Cost Aware Initial Design"}
+            initial_design_origins = {"Sampling", "Initial design", "Cost Aware Initial Design"}
             cost = 0.0
+            processed_configs = set()
 
-            # Iterate over all trials in the runhistory directly for better performance
-            for key, value in self._runhistory.items():
-                # Get the configuration associated with this trial
-                config = self._runhistory.get_config(key.config_id)
-
+            # We need to iterate through known configs to handle this correctly
+            for config in self._runhistory.get_configs():
+                config_id = self._runhistory.get_config_id(config)
                 if config.origin in initial_design_origins:
-                    # The resource cost is stored in additional_info
-                    cost += value.additional_info.get("resource_cost", 0.0)
+                    if config_id in processed_configs:
+                        continue
+
+                    # For cost-aware, the resource cost is stored in the `time` field.
+                    # We need to get all trials for this config and average their `time`.
+                    # The previous implementation used the wrong key to access the runhistory.
+                    # We need to construct a full TrialKey.
+                    trial_infos = self._runhistory.get_trials(config, highest_observed_budget_only=False)
+                    trial_keys = [TrialKey(config_id, info.instance, info.seed, info.budget) for info in trial_infos]
+
+                    # The `time` field of TrialValue holds the resource cost.
+                    resource_costs = [self._runhistory[key].time for key in trial_keys if key in self._runhistory]
+
+                    if resource_costs:
+                        cost += np.mean(resource_costs)
+                        processed_configs.add(config_id)
             return cost
 
         selected_arrays: list[np.ndarray] = []
@@ -148,7 +162,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             iteration += 1
             self._logger.info(
                 f"Iteration {iteration}: Budget used {cumulative_time:.2f}/{self._initial_budget:.2f}, "
-                f"Candidates remaining: {len(remaining_indices)}"
+                f"Candidates remaining: {len(remaining_indices)}, seed = {self._seed}"
             )
 
             if len(remaining_indices) > 1:
