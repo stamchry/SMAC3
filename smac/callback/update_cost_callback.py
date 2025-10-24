@@ -25,10 +25,11 @@ class UpdateCostCallback(Callback):
         self._initial_design_budget = initial_design_budget
         self._cumulative_cost_tracker = cumulative_cost_tracker
 
-    def on_iteration_start(self, smbo: SMBO) -> None:
+    def on_ask_start(self, smbo: SMBO) -> None:
         """
-        Called before the next run is sampled. Updates the acquisition function
-        with the current cumulative cost.
+        Called before the intensifier is asked for the next trial.
+        This is the ideal place to update the acquisition function with the current
+        cumulative cost before it's used to select a configuration.
         """
         self._acquisition_function.set_budget_info(
             total_budget=self._total_budget,
