@@ -81,22 +81,21 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             cost = 0.0
             processed_configs = set()
 
-            # We need to iterate through known configs to handle this correctly
             for config in self._runhistory.get_configs():
                 config_id = self._runhistory.get_config_id(config)
                 if config.origin in initial_design_origins:
                     if config_id in processed_configs:
                         continue
 
-                    # For cost-aware, the resource cost is stored in the `time` field.
-                    # We need to get all trials for this config and average their `time`.
-                    # The previous implementation used the wrong key to access the runhistory.
-                    # We need to construct a full TrialKey.
                     trial_infos = self._runhistory.get_trials(config, highest_observed_budget_only=False)
                     trial_keys = [TrialKey(config_id, info.instance, info.seed, info.budget) for info in trial_infos]
 
-                    # The `time` field of TrialValue holds the resource cost.
-                    resource_costs = [self._runhistory[key].time for key in trial_keys if key in self._runhistory]
+                    # CHANGED: Read resource cost from additional_info instead of time field
+                    resource_costs = [
+                        self._runhistory[key].additional_info.get("resource_cost", self._runhistory[key].time)
+                        for key in trial_keys
+                        if key in self._runhistory
+                    ]
 
                     if resource_costs:
                         cost += np.mean(resource_costs)
@@ -154,14 +153,14 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             cumulative_time = get_initial_design_cost()
             if cumulative_time >= self._initial_budget:
                 self._logger.info(
-                    f"Initial design budget of {self._initial_budget:.2f} reached or exceeded. "
-                    f"Actual cost: {cumulative_time:.2f}. Stopping."
+                    f"Initial design budget of {self._initial_budget: .2f} reached or exceeded. "
+                    f"Actual cost: {cumulative_time: .2f}. Stopping."
                 )
                 break
 
             iteration += 1
             self._logger.info(
-                f"Iteration {iteration}: Budget used {cumulative_time:.2f}/{self._initial_budget:.2f}, "
+                f"Iteration {iteration}: Budget used {cumulative_time: .2f}/{self._initial_budget: .2f}, "
                 f"Candidates remaining: {len(remaining_indices)}, seed = {self._seed}"
             )
 
@@ -224,5 +223,5 @@ class CostAwareInitialDesign(AbstractInitialDesign):
 
         final_cost = get_initial_design_cost()
         self._logger.info(
-            "Cost-aware initial design finished." f"Final actual cost: {final_cost:.2f}/{self._initial_budget:.2f}."
+            "Cost-aware initial design finished." f"Final actual cost: {final_cost: .2f}/{self._initial_budget: .2f}."
         )
