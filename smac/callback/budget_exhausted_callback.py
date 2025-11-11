@@ -29,12 +29,14 @@ class BudgetExhaustedCallback(Callback):
         self._cumulative_cost_tracker[0] += resource_cost
 
         logger.info(
-            f"Origin: {info.config.origin}, Cost: {resource_cost:.2f}, "
-            f"Cumulative Cost: {self._cumulative_cost_tracker[0]:.2f}/{self._total_resource_budget:.2f}"
+            f"Origin: {info.config.origin}, Cost: {resource_cost: .2f}, "
+            f"Cumulative Cost: {self._cumulative_cost_tracker[0]: .2f}/{self._total_resource_budget: .2f}"
         )
 
         if self._cumulative_cost_tracker[0] >= self._total_resource_budget:
             logger.info("Total resource budget exhausted. Stopping optimization.")
+            # Mark optimization as finished before stopping
+            smbo._finished = True
             return False
 
         return None
