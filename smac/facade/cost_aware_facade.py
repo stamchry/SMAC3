@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional
 import logging
 from functools import wraps
 
+import numpy as np
 from ConfigSpace import Configuration
 
 from smac.acquisition.function.abstract_acquisition_function import (
@@ -16,11 +17,13 @@ from smac.acquisition.function.cost_aware_acquisition_function import (
 from smac.acquisition.function.expected_improvement import EI
 from smac.callback.budget_exhausted_callback import BudgetExhaustedCallback
 from smac.callback.cost_surrogate_callback import CostSurrogateCallback
+from smac.callback.cumulative_cost_callback import CumulativeCostCallback
 from smac.callback.update_cost_callback import UpdateCostCallback
 from smac.facade.blackbox_facade import BlackBoxFacade
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.model import AbstractModel
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
+from smac.runhistory import StatusType
 from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
 
@@ -97,6 +100,7 @@ class CostAwareFacade(BlackBoxFacade):
             kwargs["runhistory"] = runhistory
 
         # --- Default Component Creation ---
+        cumulative_cost_tracker = [0.0]
         if initial_design is None:
             from smac.initial_design.cost_aware_initial_design import (
                 CostAwareInitialDesign,
@@ -106,6 +110,7 @@ class CostAwareFacade(BlackBoxFacade):
                 scenario=scenario,
                 cost_model=cost_model,
                 initial_budget=self._initial_design_budget,
+                cumulative_cost_tracker=cumulative_cost_tracker,
                 runhistory=runhistory,
             )
 
@@ -131,9 +136,6 @@ class CostAwareFacade(BlackBoxFacade):
                 acquisition_function=EI(), cost_surrogate_callback=cost_surrogate_callback
             )
 
-        # We use a list as a mutable tracker that can be shared between callbacks
-        cumulative_cost_tracker = [0.0]
-
         # Add budget exhausted callback
         budget_callback = BudgetExhaustedCallback(
             total_resource_budget=self._total_resource_budget, cumulative_cost_tracker=cumulative_cost_tracker
@@ -150,6 +152,10 @@ class CostAwareFacade(BlackBoxFacade):
             )
             callbacks.append(update_cost_callback)
 
+        # Add the new callback to update the cumulative cost tracker
+        cumulative_cost_callback = CumulativeCostCallback(cumulative_cost_tracker=cumulative_cost_tracker)
+        callbacks.append(cumulative_cost_callback)
+
         kwargs["callbacks"] = callbacks
 
         super().__init__(
@@ -160,6 +166,43 @@ class CostAwareFacade(BlackBoxFacade):
             overwrite=overwrite,
             **kwargs,
         )
+
+        # If we are continuing a run, the runhistory is already filled.
+        # We need to train the cost model on the existing data before we start.
+        # Otherwise, the initial design will fail because it tries to predict with an untrained model.
+        if not runhistory.empty():
+            self._logger.info("Runhistory is not empty. Training cost model and calculating cost from previous run.")
+            # We use the runhistory to get the training data for the cost model.
+            # We iterate through all finished trials to build our training dataset.
+            X_list, y_list = [], []
+            previous_run_cost = 0.0
+            for trial_key, trial_value in runhistory.items():
+                # Calculate initial cost from all trials
+                cost = trial_value.additional_info.get("resource_cost", 0.0)
+                previous_run_cost += cost
+
+                # We only train on successfully completed trials
+                if trial_value.status == StatusType.SUCCESS:
+                    config = runhistory.get_config(trial_key.config_id)
+                    # The cost for training should not be None
+                    cost = trial_value.additional_info.get("resource_cost")
+                    if cost is not None:
+                        X_list.append(config.get_array())
+                        y_list.append(cost)
+
+            if X_list:
+                X = np.array(X_list)
+                y = np.array(y_list)
+                cost_model.train(X, y)
+                self._logger.info(f"Trained cost model on {len(X)} data points from previous run.")
+            else:
+                self._logger.warning(
+                    "Runhistory is not empty, but no successful trials with cost found to train the cost model."
+                )
+
+            # Update the tracker with the cost from the resumed run
+            cumulative_cost_tracker[0] = previous_run_cost
+            self._logger.info(f"Resuming with cumulative cost of {previous_run_cost:.2f} from previous run.")
 
     def _wrap_target_function(self, target_function: Callable) -> Callable:
         @wraps(target_function)

@@ -12,7 +12,6 @@ from scipy.spatial.distance import cdist
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.initial_design.sobol_design import SobolInitialDesign
 from smac.model.abstract_model import AbstractModel
-from smac.runhistory.dataclasses import TrialKey
 from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
 
@@ -36,6 +35,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         scenario: Scenario,
         cost_model: AbstractModel,
         initial_budget: float,
+        cumulative_cost_tracker: list[float],
         runhistory: RunHistory | None = None,
         candidate_pool_size: int = 1000,
         candidate_generator: type[AbstractInitialDesign] = SobolInitialDesign,
@@ -46,6 +46,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         self._scenario = scenario
         self._cost_model = cost_model
         self._initial_budget = initial_budget
+        self._cumulative_cost_tracker = cumulative_cost_tracker
         self._candidate_pool_size = candidate_pool_size
         self._logger = logging.getLogger(self.__class__.__name__)
         self._candidate_generator = candidate_generator
@@ -71,37 +72,6 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             c. The predicted cost of this new configuration is added to the total. The cost model
                is expected to be retrained externally after evaluation.
         """
-
-        def get_initial_design_cost() -> float:
-            """Calculates the true cost of the initial design from the runhistory."""
-            if self._runhistory is None:
-                return 0.0
-
-            initial_design_origins = {"Sampling", "Initial design", "Cost Aware Initial Design"}
-            cost = 0.0
-            processed_configs = set()
-
-            for config in self._runhistory.get_configs():
-                config_id = self._runhistory.get_config_id(config)
-                if config.origin in initial_design_origins:
-                    if config_id in processed_configs:
-                        continue
-
-                    trial_infos = self._runhistory.get_trials(config, highest_observed_budget_only=False)
-                    trial_keys = [TrialKey(config_id, info.instance, info.seed, info.budget) for info in trial_infos]
-
-                    # CHANGED: Read resource cost from additional_info instead of time field
-                    resource_costs = [
-                        self._runhistory[key].additional_info.get("resource_cost", self._runhistory[key].time)
-                        for key in trial_keys
-                        if key in self._runhistory
-                    ]
-
-                    if resource_costs:
-                        cost += np.mean(resource_costs)
-                        processed_configs.add(config_id)
-            return cost
-
         selected_arrays: list[np.ndarray] = []
 
         # Step 3: Discretize Ω into ˜Ω using the specified candidate generator.
@@ -117,24 +87,37 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         )
 
         # --- Bootstrap phase: Yield random points to train the model ---
-        if self._n_bootstrap_points > 0 and discretized_space:
-            self._logger.info(f"Yielding {self._n_bootstrap_points} random point(s) to bootstrap the cost model.")
-            available_candidates = list(discretized_space)
-            n_to_sample = min(self._n_bootstrap_points, len(available_candidates))
-            sample_indices = self._rng.choice(len(available_candidates), n_to_sample, replace=False)
+        # Only bootstrap if we are starting a fresh run (i.e., runhistory is empty).
+        is_continuing = self._runhistory is not None and not self._runhistory.empty()
+        if not is_continuing:
+            if self._n_bootstrap_points > 0 and discretized_space:
+                self._logger.info(f"Yielding {self._n_bootstrap_points} random point(s) to bootstrap the cost model.")
+                available_candidates = list(discretized_space)
+                n_to_sample = min(self._n_bootstrap_points, len(available_candidates))
+                sample_indices = self._rng.choice(len(available_candidates), n_to_sample, replace=False)
 
-            configs_to_remove_from_pool_indices = sorted(sample_indices, reverse=True)
+                configs_to_remove_from_pool_indices = sorted(sample_indices, reverse=True)
 
-            for idx in configs_to_remove_from_pool_indices:
-                bootstrap_config = available_candidates[idx]
-                bootstrap_config.origin = "Sampling"
-                selected_arrays.append(bootstrap_config.get_array())
-                yield bootstrap_config
+                for idx in configs_to_remove_from_pool_indices:
+                    bootstrap_config = available_candidates[idx]
+                    bootstrap_config.origin = "Sampling"
+                    selected_arrays.append(bootstrap_config.get_array())
+                    yield bootstrap_config
 
-            # Remove the sampled configs from the main discretized space
-            # Create a set of arrays to remove for efficient lookup
-            arrays_to_remove = {tuple(discretized_space[i].get_array()) for i in sample_indices}
-            discretized_space = [c for c in discretized_space if tuple(c.get_array()) not in arrays_to_remove]
+                # Remove the sampled configs from the main discretized space
+                # Create a set of arrays to remove for efficient lookup
+                arrays_to_remove = {tuple(discretized_space[i].get_array()) for i in sample_indices}
+                discretized_space = [c for c in discretized_space if tuple(c.get_array()) not in arrays_to_remove]
+        elif is_continuing:
+            initial_design_origins = {"Sampling", "Initial design", "Cost Aware Initial Design"}
+            self._logger.info(
+                "Continuing run. Skipping bootstrap phase and populating selected configurations from runhistory."
+            )
+            # Populate selected_arrays with configs from the previous run's initial design
+            if self._runhistory is not None:
+                selected_arrays = [
+                    c.get_array() for c in self._runhistory.get_configs() if c.origin in initial_design_origins
+                ]
 
         self._logger.info(
             f"Generated {len(candidate_pool_raw)} candidates, resulting in "
@@ -150,7 +133,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         # Step 4: Main loop `while ct < τinit do`
         iteration = 0
         while remaining_indices:
-            cumulative_time = get_initial_design_cost()
+            cumulative_time = self._cumulative_cost_tracker[0]
             if cumulative_time >= self._initial_budget:
                 self._logger.info(
                     f"Initial design budget of {self._initial_budget: .2f} reached or exceeded. "
@@ -221,7 +204,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                 self._logger.warning("No candidates left after elimination process. Stopping.")
                 break
 
-        final_cost = get_initial_design_cost()
+        final_cost = self._cumulative_cost_tracker[0]
         self._logger.info(
             "Cost-aware initial design finished." f"Final actual cost: {final_cost: .2f}/{self._initial_budget: .2f}."
         )
