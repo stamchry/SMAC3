@@ -176,6 +176,7 @@ class CostAwareFacade(BlackBoxFacade):
             # We iterate through all finished trials to build our training dataset.
             X_list, y_list = [], []
             previous_run_cost = 0.0
+
             for trial_key, trial_value in runhistory.items():
                 # Calculate initial cost from all trials
                 cost = trial_value.additional_info.get("resource_cost", 0.0)
@@ -202,7 +203,12 @@ class CostAwareFacade(BlackBoxFacade):
 
             # Update the tracker with the cost from the resumed run
             cumulative_cost_tracker[0] = previous_run_cost
-            self._logger.info(f"Resuming with cumulative cost of {previous_run_cost:.2f} from previous run.")
+            self._logger.info(f"Resuming with cumulative cost of {previous_run_cost: .2f} from previous run.")
+
+            # We need to trigger the generator to populate the initial design with configs from the runhistory.
+            # This prevents them from being selected again. This must be done AFTER the cost model is trained.
+            if isinstance(initial_design, CostAwareInitialDesign):
+                list(initial_design.select_configurations())
 
     def _wrap_target_function(self, target_function: Callable) -> Callable:
         @wraps(target_function)

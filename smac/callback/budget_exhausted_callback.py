@@ -26,7 +26,6 @@ class BudgetExhaustedCallback(Callback):
         """
         # The resource cost is passed in additional_info
         resource_cost = value.additional_info.get("resource_cost", 0.0)
-        self._cumulative_cost_tracker[0] += resource_cost
 
         logger.info(
             f"Origin: {info.config.origin}, Cost: {resource_cost: .2f}, "

@@ -115,9 +115,27 @@ class CostAwareInitialDesign(AbstractInitialDesign):
             )
             # Populate selected_arrays with configs from the previous run's initial design
             if self._runhistory is not None:
-                selected_arrays = [
-                    c.get_array() for c in self._runhistory.get_configs() if c.origin in initial_design_origins
-                ]
+                configs_from_history = [c for c in self._runhistory.get_configs() if c.origin in initial_design_origins]
+                selected_arrays = [c.get_array() for c in configs_from_history]
+
+                # Also remove these from the discretized_space to avoid re-selection
+                if selected_arrays:
+                    # Create a set of arrays to remove for efficient lookup
+                    arrays_to_remove = {tuple(arr) for arr in selected_arrays}
+                    discretized_space = [c for c in discretized_space if tuple(c.get_array()) not in arrays_to_remove]
+                # We must yield the configs from history so the intensifier knows about them
+                for config in configs_from_history:
+                    yield config
+
+                # After yielding historical configs, check if the budget is already exhausted.
+                # If so, we should not proceed to select new configurations.
+                if self._cumulative_cost_tracker[0] >= self._initial_budget:
+                    self._logger.info(
+                        f"Initial design budget of {self._initial_budget: .2f} already met by previous run "
+                        f"({self._cumulative_cost_tracker[0]: .2f}). "
+                        "No new initial design configurations will be selected."
+                    )
+                    return
 
         self._logger.info(
             f"Generated {len(candidate_pool_raw)} candidates, resulting in "
