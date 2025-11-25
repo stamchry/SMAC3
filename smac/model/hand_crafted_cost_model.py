@@ -136,6 +136,10 @@ class RLHandCraftedCostModel(HandCraftedCostModel):
 
         except KeyError as e:
             self._logger.error(f"Missing required hyperparameter in config: {e}")
+            self._logger.error(f"Full config: {config}")
+            self._logger.error(f"Config keys: {list(config.keys())}")
+            for k in config.keys():
+                self._logger.error(f"{k}: {config[k]}")
             raise
 
         nn_complexity = mlp_depth * hidden_size

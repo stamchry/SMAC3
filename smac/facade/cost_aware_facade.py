@@ -20,7 +20,10 @@ from smac.callback.update_cost_callback import UpdateCostCallback
 from smac.facade.blackbox_facade import BlackBoxFacade
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.model import AbstractModel
-from smac.model.hand_crafted_cost_model import HandCraftedCostModel
+from smac.model.hand_crafted_cost_model import (
+    HandCraftedCostModel,
+    RLHandCraftedCostModel,
+)
 from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
 
@@ -63,6 +66,7 @@ class CostAwareFacade(BlackBoxFacade):
         *,
         cost_model: AbstractModel | None = None,
         cost_formula: Callable | None = None,
+        rl_hand_crafted: bool = False,
         initial_design: AbstractInitialDesign | None = None,
         initial_design_budget_ratio: float = 0.125,
         acquisition_function: AbstractAcquisitionFunction | None = None,
@@ -80,8 +84,13 @@ class CostAwareFacade(BlackBoxFacade):
         if cost_model is not None and cost_formula is not None:
             raise ValueError("Cannot provide both `cost_model` and `cost_formula`.")
 
+        if rl_hand_crafted and cost_model is not None:
+            raise ValueError("Cannot provide `cost_model` when `rl_hand_crafted` is True.")
+
         if cost_model is None:
-            if cost_formula is not None:
+            if rl_hand_crafted:
+                cost_model = RLHandCraftedCostModel(scenario=scenario)
+            elif cost_formula is not None:
                 cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
             else:
                 # We need a model for the cost, so we create a default one.
