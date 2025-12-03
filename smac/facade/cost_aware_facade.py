@@ -66,7 +66,7 @@ class CostAwareFacade(BlackBoxFacade):
         *,
         cost_model: AbstractModel | None = None,
         cost_formula: Callable | None = None,
-        rl_hand_crafted: bool = False,
+        rl_hand_crafted_cost_model: bool = False,
         initial_design: AbstractInitialDesign | None = None,
         initial_design_budget_ratio: float = 0.125,
         acquisition_function: AbstractAcquisitionFunction | None = None,
@@ -84,11 +84,11 @@ class CostAwareFacade(BlackBoxFacade):
         if cost_model is not None and cost_formula is not None:
             raise ValueError("Cannot provide both `cost_model` and `cost_formula`.")
 
-        if rl_hand_crafted and cost_model is not None:
+        if rl_hand_crafted_cost_model and cost_model is not None:
             raise ValueError("Cannot provide `cost_model` when `rl_hand_crafted` is True.")
 
         if cost_model is None:
-            if rl_hand_crafted:
+            if rl_hand_crafted_cost_model:
                 cost_model = RLHandCraftedCostModel(scenario=scenario)
             elif cost_formula is not None:
                 cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
