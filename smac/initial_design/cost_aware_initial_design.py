@@ -12,6 +12,7 @@ from scipy.spatial.distance import cdist
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.initial_design.sobol_design import SobolInitialDesign
 from smac.model.abstract_model import AbstractModel
+from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 from smac.runhistory.dataclasses import TrialKey
 from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
@@ -117,7 +118,12 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         )
 
         # --- Bootstrap phase: Yield random points to train the model ---
-        if self._n_bootstrap_points > 0 and discretized_space:
+        # We skip this if the cost model is hand-crafted as it does not need training.
+        if (
+            self._n_bootstrap_points > 0
+            and discretized_space
+            and not isinstance(self._cost_model, HandCraftedCostModel)
+        ):
             self._logger.info(f"Yielding {self._n_bootstrap_points} random point(s) to bootstrap the cost model.")
             available_candidates = list(discretized_space)
             n_to_sample = min(self._n_bootstrap_points, len(available_candidates))
