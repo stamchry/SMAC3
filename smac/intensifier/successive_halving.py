@@ -363,6 +363,7 @@ class SuccessiveHalving(AbstractIntensifier):
                         configs.append(config)
                     except StopIteration:
                         # We stop if we don't find any configuration anymore
+                        logger.warning("Config generator exhausted while filling initial tracker.")
                         return
 
                 seed = self._get_next_order_seed()
@@ -442,6 +443,11 @@ class SuccessiveHalving(AbstractIntensifier):
             # We simply add as many configs to the stage as required (_n_configs_in_stage[0])
             configs = []
             next_bracket = self._get_next_bracket()
+
+            logger.info(f"Adding new configs to bracket {next_bracket}:")
+            logger.info(f"--- Number of configs in stage: {self._n_configs_in_stage[next_bracket]}")
+            logger.info(f"--- Budgets in stage: {self._budgets_in_stage[next_bracket]}")
+
             for _ in range(self._n_configs_in_stage[next_bracket][0]):
                 try:
                     config = next(self.config_generator)
