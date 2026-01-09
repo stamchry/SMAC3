@@ -9,6 +9,7 @@ from smac.acquisition.function.abstract_acquisition_function import (
 )
 from smac.callback.cost_surrogate_callback import CostSurrogateCallback
 from smac.model.abstract_model import AbstractModel
+from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 
 
 class CostAwareAcquisitionFunction(AbstractAcquisitionFunction):
@@ -110,8 +111,11 @@ class CostAwareAcquisitionFunction(AbstractAcquisitionFunction):
         if self._alpha == 0.0:
             return acq_values
 
-        # Get predicted costs
-        cost_values, _ = self._cost_callback.cost_model.predict(X)
+        # Get predicted costs (non hand crafted cost model predicts log-costs)
+        if isinstance(self._cost_callback.cost_model, HandCraftedCostModel):
+            cost_values, _ = self._cost_callback.cost_model.predict(X)
+        else:
+            cost_values, _ = np.exp(self._cost_callback.cost_model.predict(X))
         cost_values = np.maximum(cost_values, 1e-9)  # Avoid division by zero
 
         # Return acq_value / (cost^alpha)
