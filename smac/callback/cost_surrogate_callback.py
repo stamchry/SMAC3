@@ -5,7 +5,7 @@ from smac.main.smbo import SMBO
 from smac.model.abstract_model import AbstractModel
 from smac.runhistory.dataclasses import TrialInfo, TrialValue
 from smac.runhistory.encoder.abstract_encoder import AbstractRunHistoryEncoder
-from smac.runhistory.encoder.log_scaled_encoder import RunHistoryLogScaledEncoder
+from smac.runhistory.encoder.log_encoder import RunHistoryLogEncoder
 from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
 from smac.utils.logging import get_logger
@@ -42,7 +42,7 @@ class CostSurrogateCallback(Callback):
         self._cost_runhistory = RunHistory()
 
         if encoder is None:
-            self._encoder = RunHistoryLogScaledEncoder(scenario=scenario)
+            self._encoder = RunHistoryLogEncoder(scenario=scenario)
         else:
             self._encoder = encoder
 

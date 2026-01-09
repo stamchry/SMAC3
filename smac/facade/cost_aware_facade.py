@@ -24,7 +24,6 @@ from smac.model.hand_crafted_cost_model import (
     HandCraftedCostModel,
     RLHandCraftedCostModel,
 )
-from smac.model.log_random_forest import LogRandomForest
 from smac.model.rl_linear_cost_model import RLLinearCostModel
 from smac.runhistory.runhistory import RunHistory
 from smac.scenario import Scenario
@@ -94,7 +93,7 @@ class CostAwareFacade(BlackBoxFacade):
         if cost_model is None:
             if gp_cost_model:
                 cost_model = BlackBoxFacade.get_model(scenario)
-            if rl_hand_crafted_cost_model:
+            elif rl_hand_crafted_cost_model:
                 cost_model = RLHandCraftedCostModel(scenario=scenario)
             elif rl_linear_cost_model:
                 cost_model = RLLinearCostModel(scenario=scenario)
@@ -102,21 +101,11 @@ class CostAwareFacade(BlackBoxFacade):
                 cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
             else:
                 # We need a model for the cost, so we create a default one.
-                # We use LogRandomForest to ensure predictions are in linear space (seconds)
-                # while training happens in log space.
-                # We use the same default hyperparameters as HyperparameterOptimizationFacade.
-                cost_model = LogRandomForest(
-                    configspace=scenario.configspace,
-                    instance_features=scenario.instance_features,
-                    seed=scenario.seed,
-                    log_y=True,
-                    n_trees=10,
-                    ratio_features=1.0,
-                    min_samples_split=2,
-                    min_samples_leaf=1,
-                    max_depth=2**20,
-                    bootstrapping=True,
+                from smac.facade.hyperparameter_optimization_facade import (
+                    HyperparameterOptimizationFacade,
                 )
+
+                cost_model = HyperparameterOptimizationFacade.get_model(scenario=scenario)
 
         runhistory: Optional[RunHistory] = kwargs.get("runhistory")
         if runhistory is None:
