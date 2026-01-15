@@ -8,7 +8,6 @@ from smac.acquisition.function.abstract_acquisition_function import (
     AbstractAcquisitionFunction,
 )
 from smac.callback.cost_surrogate_callback import CostSurrogateCallback
-from smac.model.abstract_model import AbstractModel
 from smac.model.hand_crafted_cost_model import HandCraftedCostModel
 
 
@@ -81,7 +80,7 @@ class CostAwareAcquisitionFunction(AbstractAcquisitionFunction):
         self._cumulative_cost = cumulative_cost
         self._initial_design_budget = initial_design_budget
 
-    def update(self, model: AbstractModel, **kwargs: Any) -> None:
+    def _update(self, **kwargs: Any) -> None:
         """
         Update the acquisition function with new budget information and pass updates
         to the wrapped acquisition function.
@@ -97,7 +96,8 @@ class CostAwareAcquisitionFunction(AbstractAcquisitionFunction):
             self._alpha = max(0.0, (self._total_budget - self._cumulative_cost) / denominator)
 
         # Update the wrapped acquisition function
-        self._acquisition_function.update(model, **kwargs)
+        assert self.model is not None
+        self._acquisition_function.update(model=self.model, **kwargs)
 
     def _compute(self, X: np.ndarray) -> np.ndarray:
         """Compute the cost-aware acquisition values."""
