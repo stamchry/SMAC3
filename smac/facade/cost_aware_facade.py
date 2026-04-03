@@ -21,6 +21,8 @@ from smac.facade.blackbox_facade import BlackBoxFacade
 from smac.initial_design.abstract_initial_design import AbstractInitialDesign
 from smac.model import AbstractModel
 from smac.model.hand_crafted_cost_model import (
+    CpuHandCraftedCostModel,
+    GpuHandCraftedCostModel,
     HandCraftedCostModel,
     RLHandCraftedCostModel,
 )
@@ -68,6 +70,8 @@ class CostAwareFacade(BlackBoxFacade):
         cost_model: AbstractModel | None = None,
         cost_formula: Callable | None = None,
         rl_hand_crafted_cost_model: bool = False,
+        cpu_cost_model: bool = False,
+        gpu_cost_model: bool = False,
         rl_linear_cost_model: bool = False,
         gp_cost_model: bool = False,
         initial_design: AbstractInitialDesign | None = None,
@@ -97,6 +101,10 @@ class CostAwareFacade(BlackBoxFacade):
                 cost_model = RLHandCraftedCostModel(scenario=scenario)
             elif rl_linear_cost_model:
                 cost_model = RLLinearCostModel(scenario=scenario)
+            elif cpu_cost_model:
+                cost_model = CpuHandCraftedCostModel(scenario=scenario)
+            elif gpu_cost_model:
+                cost_model = GpuHandCraftedCostModel(scenario=scenario)
             elif cost_formula is not None:
                 cost_model = HandCraftedCostModel(scenario=scenario, cost_formula=cost_formula)
             else:

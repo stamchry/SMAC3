@@ -154,3 +154,100 @@ class RLHandCraftedCostModel(HandCraftedCostModel):
 
         # Return total cost
         return update_cost + collection_cost
+
+
+class CpuHandCraftedCostModel(HandCraftedCostModel):
+    """A physics-based linear cost model for CPU runtime estimation."""
+
+    def __init__(
+        self,
+        scenario: Scenario,
+    ):
+        """
+        Parameters
+        ----------
+        scenario : Scenario
+            The SMAC scenario
+        """
+        super().__init__(scenario=scenario, cost_formula=self._compute_cost)
+
+    def _compute_cost(self, config: Configuration) -> float:
+        """Compute the cost based on physics terms."""
+        try:
+            total_steps = float(config["environment.n_total_timesteps"])
+            n_envs = float(config["environment.n_envs"])
+            minibatch_size = float(config["hp_config.minibatch_size"])
+            epochs = float(config["hp_config.update_epochs"])
+            n_steps = float(config["hp_config.n_steps"])
+            hidden_size = float(config["nas_config.hidden_size"])
+
+            # Profiling constants from config
+            env_step_time = float(config["profiling.env_step_time"])
+            inference_time = float(config["profiling.inference_time"])
+            grad_backprop_time = float(config["profiling.grad_backprop_time"])
+
+        except KeyError as e:
+            self._logger.error(f"Missing required hyperparameter in config: {e}")
+            raise
+
+        term_inference = total_steps / n_envs
+        term_backprop = (total_steps * epochs) / minibatch_size
+
+        # Calibrated Physical Costs
+        phys_inference = term_inference * inference_time
+        phys_backprop = term_backprop * grad_backprop_time
+        phys_env_step = term_inference * env_step_time
+
+        # Return cost using the specified formula
+        return 4.711767e-5 * hidden_size * phys_backprop * (
+            minibatch_size + phys_inference * (minibatch_size + hidden_size) / phys_env_step
+        ) + np.log(n_steps)
+
+
+class GpuHandCraftedCostModel(HandCraftedCostModel):
+    """A physics-based non-linear cost model for GPU runtime estimation."""
+
+    def __init__(
+        self,
+        scenario: Scenario,
+    ):
+        """
+        Parameters
+        ----------
+        scenario : Scenario
+            The SMAC scenario
+        """
+        super().__init__(scenario=scenario, cost_formula=self._compute_cost)
+
+    def _compute_cost(self, config: Configuration) -> float:
+        """Compute the cost based on the specific GPU formula."""
+        try:
+            total_steps = float(config["environment.n_total_timesteps"])
+            n_envs = float(config["environment.n_envs"])
+            minibatch_size = float(config["hp_config.minibatch_size"])
+            epochs = float(config["hp_config.update_epochs"])
+            hidden_size = float(config["nas_config.hidden_size"])
+
+            # Profiling constants from config
+            env_step_time = float(config["profiling.env_step_time"])
+            inference_time = float(config["profiling.inference_time"])
+            grad_backprop_time = float(config["profiling.grad_backprop_time"])
+
+        except KeyError as e:
+            self._logger.error(f"Missing required hyperparameter in config: {e}")
+            raise
+
+        # Physics Terms
+        term_inference = total_steps / n_envs
+        term_backprop = (total_steps * epochs) / minibatch_size
+
+        # Calibrated Physical Costs
+        phys_inference = term_inference * inference_time
+        phys_backprop = term_backprop * grad_backprop_time
+        phys_env_step = term_inference * env_step_time
+
+        return (
+            np.sqrt(hidden_size)
+            + (phys_backprop**0.77828395)
+            + (phys_env_step**1.1820087 / np.sqrt(phys_inference))
+        )

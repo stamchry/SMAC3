@@ -40,7 +40,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
         runhistory: RunHistory | None = None,
         candidate_pool_size: int = 1000,
         candidate_generator: type[AbstractInitialDesign] = SobolInitialDesign,
-        n_bootstrap_points: int = 1,
+        n_bootstrap_points: int = 5,
         **kwargs: Any,
     ):
         super().__init__(scenario=scenario, n_configs=None, **kwargs)
@@ -99,7 +99,7 @@ class CostAwareInitialDesign(AbstractInitialDesign):
                     ]
 
                     if resource_costs:
-                        cost += np.mean(resource_costs)
+                        cost += np.sum(resource_costs)
                         processed_configs.add(config_id)
             return cost
 

@@ -26,7 +26,7 @@ class CostSurrogateCallback(Callback):
         The SMAC scenario object.
     encoder : AbstractRunHistoryEncoder | None, defaults to None
         The encoder to transform the cost data before training the model.
-        If None, defaults to `RunHistoryLogScaledEncoder`.
+        If None, defaults to `RunHistoryLogEncoder`.
     """
 
     _encoder: AbstractRunHistoryEncoder
