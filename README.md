@@ -1,3 +1,20 @@
+# SMAC3 - Cost-Aware BO Extension
+
+This is a fork of the official [SMAC3 repository](https://github.com/automl/SMAC3).
+>
+> ### 🎓 Master Thesis Research
+> This repository contains an implementation of **Cost-Aware Bayesian Optimisation** ([Lee et al. (2020)](https://arxiv.org/abs/2003.10870)) natively in SMAC3, made for the thesis: 
+> **"Cost-Aware Bayesian Optimisation for Reinforcement Learning" (2026)**.
+> 
+> My work focuses on its application to the PPO algorithm, including the development of analytic cost models and integration into the SMAC3 library.
+> 
+> **The exact snapshot used for the results is preserved here:**
+> 👉 **[Release v1.0-thesis](https://github.com/stamchry/SMAC3/releases/tag/v1.0-thesis)**
+>
+> **Related Repositories:**
+> * [ARLBench (Configurations)](https://github.com/stamchry/arlbench/releases/tag/v1.0-thesis)
+> * [HyperSweeper (Orchestration)](https://github.com/stamchry/hypersweeper/releases/tag/v1.0-thesis)
+
 # SMAC3: A Versatile Bayesian Optimization Package for Hyperparameter Optimization
 
 
